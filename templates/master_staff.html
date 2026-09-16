@@ -37,6 +37,7 @@
     </form>
 
     <div class="spacer"></div>
+    <a class="btn btn-sm" href="/leaves">วันลา</a>
     <a class="btn btn-sm" href="/master/departments">จัดการฝ่าย</a>
     <button class="btn btn-primary btn-sm"
             x-on:click='f = {{ blank | tojson }}; editing = true'>+ เพิ่มพนักงาน</button>
@@ -75,6 +76,7 @@
               {% else %}<span class="badge">ปิดใช้งาน</span>{% endif %}
             </td>
             <td class="row-actions">
+              <a class="btn btn-sm" href="/leaves?staff_id={{ r.id }}" title="วันลาของ {{ r.name }}">วันลา</a>
               <button class="btn btn-sm" x-on:click='f = {{ {
                 'id': r.id, 'name': r.name, 'code': r.code,
                 'department_id': r.department_id or '', 'position': r.position,

@@ -202,16 +202,24 @@ def save_staff(request: Request,
 @router.post("/staff/{staff_id}/delete")
 def delete_staff(request: Request, staff_id: int,
                  f_department_id: str = Form(""), f_position: str = Form("")):
-    """คนที่เคยมีงานจะไม่ถูกลบ แต่ปิดการใช้งานแทน เพื่อไม่ให้งานเก่าเสียชื่อเจ้าของ"""
+    """คนที่เคยมีงานหรือมีประวัติวันลาจะไม่ถูกลบ แต่ปิดการใช้งานแทน
+
+    ลบจริงแล้วงานเก่าจะไร้เจ้าของ และ staff_leaves จะถูก CASCADE หายไปทั้งประวัติ
+    """
     require_role(request, "manager")
     keep = {"department_id": f_department_id, "position": f_position}
     with get_conn() as conn:
         used = fetchall(conn, "SELECT COUNT(*) AS n FROM activities "
                               "WHERE assignee_id = %s AND NOT is_deleted", (staff_id,))[0]["n"]
-        if used:
+        leaves = fetchall(conn, "SELECT COUNT(*) AS n FROM staff_leaves "
+                                "WHERE staff_id = %s AND NOT is_deleted", (staff_id,))[0]["n"]
+        if used or leaves:
             execute(conn, "UPDATE staff SET active = FALSE WHERE id = %s", (staff_id,))
+            why = " และ ".join(x for x in (
+                f"งานในระบบ {used} รายการ" if used else "",
+                f"ประวัติวันลา {leaves} รายการ" if leaves else "") if x)
             return _back("/master/staff", keep=keep,
-                         ok=f"คนนี้มีงานในระบบ {used} รายการ จึงปิดการใช้งานแทนการลบ")
+                         ok=f"คนนี้มี{why} จึงปิดการใช้งานแทนการลบ")
         execute(conn, "DELETE FROM staff WHERE id = %s", (staff_id,))
     return _back("/master/staff", ok="ลบพนักงานออกจากทะเบียนแล้ว", keep=keep)
 
@@ -276,3 +284,64 @@ def delete_department(request: Request, department_id: int):
                          ok=f"ฝ่ายนี้มีพนักงาน {used} คน จึงปิดการใช้งานแทนการลบ")
         execute(conn, "DELETE FROM departments WHERE id = %s", (department_id,))
     return _back("/master/departments", ok="ลบฝ่ายแล้ว")
+
+
+# ── ประเภทการลา ──────────────────────────────────────────────
+# เข้าจากปุ่มบนหน้าวันลา (/leaves) เหมือนหน้าฝ่ายที่เข้าจากหน้าพนักงาน
+
+@router.get("/leave-types")
+def leave_types_page(request: Request, ok: str = "", err: str = ""):
+    user = require_role(request, "manager")
+    with get_conn() as conn:
+        rows = fetchall(conn, """
+            SELECT t.*,
+                   (SELECT COUNT(*) FROM staff_leaves l
+                     WHERE l.leave_type_id = t.id AND NOT l.is_deleted) AS used_n
+              FROM leave_types t
+             ORDER BY t.sort_order, t.name
+        """)
+        return page(request, user, "master_leave_types.html", conn=conn, rows=rows)
+
+
+@router.post("/leave-types/save")
+def save_leave_type(request: Request,
+                    id: str = Form(""), name: str = Form(...),
+                    color: str = Form("#e08c00"), sort_order: str = Form("0"),
+                    active: str = Form(""), note: str = Form("")):
+    require_role(request, "manager")
+    values = (as_text(name), as_text(color) or "#e08c00", as_int(sort_order, 0),
+              as_bool(active), as_text(note))
+    if not values[0]:
+        return _back("/master/leave-types", err="ต้องกรอกชื่อประเภทการลา")
+
+    try:
+        with get_conn() as conn:
+            if as_int(id):
+                execute(conn, """
+                    UPDATE leave_types SET name = %s, color = %s, sort_order = %s,
+                           active = %s, note = %s, updated_at = NOW()
+                     WHERE id = %s
+                """, values + (as_int(id),))
+            else:
+                execute(conn, """
+                    INSERT INTO leave_types (name, color, sort_order, active, note)
+                    VALUES (%s, %s, %s, %s, %s)
+                """, values)
+    except errors.UniqueViolation:
+        return _back("/master/leave-types", err=f"มีประเภทการลาชื่อ \"{values[0]}\" อยู่แล้ว")
+    return _back("/master/leave-types", ok="บันทึกประเภทการลาแล้ว")
+
+
+@router.post("/leave-types/{type_id}/delete")
+def delete_leave_type(request: Request, type_id: int):
+    """ประเภทที่เคยถูกใช้จะไม่ถูกลบ แต่ปิดการใช้งานแทน — รายการลาเก่าจะได้ไม่เสียประเภท"""
+    require_role(request, "manager")
+    with get_conn() as conn:
+        used = fetchall(conn, "SELECT COUNT(*) AS n FROM staff_leaves "
+                              "WHERE leave_type_id = %s AND NOT is_deleted", (type_id,))[0]["n"]
+        if used:
+            execute(conn, "UPDATE leave_types SET active = FALSE WHERE id = %s", (type_id,))
+            return _back("/master/leave-types",
+                         ok=f"ประเภทนี้ถูกใช้ใน {used} รายการแล้ว จึงปิดการใช้งานแทนการลบ")
+        execute(conn, "DELETE FROM leave_types WHERE id = %s", (type_id,))
+    return _back("/master/leave-types", ok="ลบประเภทการลาแล้ว")

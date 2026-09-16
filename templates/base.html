@@ -50,7 +50,7 @@
       </a>
       {# v2: ทะเบียน staff ขยายเป็นพนักงานทั้งฟาร์ม (รหัส ฝ่าย ตำแหน่ง วันลา)
          หน้าฝ่ายเป็นหน้าลูกของหน้านี้ จึงให้เมนูเดียวกันติดสว่าง #}
-      <a href="/master/staff" class="{{ 'active' if path.startswith('/master/staff') or path.startswith('/master/departments') }}">
+      <a href="/master/staff" class="{{ 'active' if path.startswith(('/master/staff', '/master/departments', '/master/leave-types', '/leaves')) }}">
         <span class="ico">◍</span> จัดการพนักงาน
       </a>
 
@@ -118,7 +118,7 @@
     <a href="/history" class="{{ 'active' if path.startswith('/history') }}">
       <span class="ico">▥</span>รายงาน
     </a>
-    <a href="/settings" class="{{ 'active' if path == '/settings' or path.startswith('/master') or path.startswith('/settings/') or path.startswith('/account') }}">
+    <a href="/settings" class="{{ 'active' if path == '/settings' or path.startswith(('/master', '/settings/', '/account', '/leaves')) }}">
       <span class="ico">⚙</span>ตั้งค่า
     </a>
   </nav>

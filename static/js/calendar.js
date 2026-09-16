@@ -1,8 +1,9 @@
 /* calendar.js — สถานะของหน้าปฏิทิน
 
-   แผงข้างมีสามสภาพ:
+   แผงข้างมีสี่สภาพ:
      tab = 'next'    ลิสต์งานต่อไป (กำลังทำ + วันนี้ + วันถัดๆ ไป เรียงลงมาเป็นชุดเดียว)
      tab = 'overdue' ลิสต์งานค้าง
+     tab = 'staff'   ใครลา / ใครมาทำงาน ในวันที่เลือก (v2) — แถบเดียวที่ผูกกับวันในปฏิทิน
      picked          รายละเอียดของกิจกรรมที่กดเลือก (จากแถบในปฏิทินหรือจากลิสต์)
 
    ข้อมูลทั้งหมดถูกส่งมาพร้อมหน้าตั้งแต่แรก การกดจึงตอบสนองทันทีโดยไม่ต้องยิงกลับ
@@ -17,12 +18,24 @@ function calendarPage(data) {
     nextItems: data.next || [],
     overdueItems: data.overdue || [],
 
+    // แถบพนักงาน — ทะเบียนคนกับรายการลาที่คาบเดือนนี้ ส่งมาทีเดียว
+    // แยก "ลา / มาทำงาน" ตามวันที่กดที่นี่ (เทียบ ISO เป็นข้อความได้ตรงๆ)
+    staff: data.staff || [],
+    leaves: data.leaves || [],
+    dayLabels: data.dayLabels || {},    // ชื่อวันไทยจากเซิร์ฟเวอร์ — ห้ามจัดรูปวันไทยใน JS
+    canManage: !!data.canManage,
+
     tab: 'next',
     pickedId: data.picked || null,      // กางรายละเอียดค้างไว้ตั้งแต่โหลดหน้า (ดู pick())
     selDate: data.selected || null,     // วันที่ไฮไลต์ไว้ในตาราง
     todayIso: data.today || '',         // ใช้เป็นเพดานของช่อง "แก้วันเริ่มงาน"
 
     init() {
+      // กลับมาจากหน้าวันลา (ปุ่มลัดในแถบพนักงาน) ให้เปิดแถบพนักงานต่อ
+      if (data.tab === 'staff') {
+        this.tab = 'staff';
+        return;
+      }
       // เปิดแถบให้ตรงกับที่ผู้ใช้กดมา หลังโหลดหน้าใหม่เพราะเลื่อนเดือน
       // ไม่ต้องส่งชื่อแถบมาทาง URL — ดูจากว่ากิจกรรมนั้นอยู่ลิสต์ไหนก็รู้แล้ว
       const inOverdue = id => this.overdueItems.some(a => a.id === id);
@@ -30,6 +43,52 @@ function calendarPage(data) {
           || (this.overdueItems.length && !this.nextItems.length)) {
         this.tab = 'overdue';
       }
+    },
+
+    /** วันที่แถบพนักงานกำลังแสดง — ไม่ได้เลือกวัน = วันนี้ */
+    get staffDay() {
+      return this.selDate || this.todayIso;
+    },
+
+    get dayLeaves() {
+      const d = this.staffDay;
+      return this.leaves.filter(l => l.from <= d && d <= l.to);
+    },
+
+    /** คนที่มาทำงาน = ทุกคนในทะเบียน − คนที่ลาวันนั้น (รวมลาครึ่งวัน)
+     *  เฟส C จะแยกต่อว่าประจำจุดงานไหน หรือว่างจริง */
+    get dayPresent() {
+      const away = new Set(this.dayLeaves.map(l => l.staff_id));
+      return this.staff.filter(s => !away.has(s.id));
+    },
+
+    /** จัดกลุ่มคนที่มาทำงานตามฝ่าย — ทะเบียนส่งมาเรียงตามฝ่ายอยู่แล้ว จึงแค่หั่นตามชื่อ */
+    get presentGroups() {
+      const groups = [];
+      for (const s of this.dayPresent) {
+        const name = s.department || 'ยังไม่ระบุฝ่าย';
+        const last = groups[groups.length - 1];
+        if (last && last.name === name) {
+          last.staff.push(s);
+        } else {
+          groups.push({ name, staff: [s] });
+        }
+      }
+      return groups;
+    },
+
+    /** กดแถบ "ลา …" บนปฏิทิน — เปิดแถบพนักงานของวันนั้น */
+    pickStaffDay(iso) {
+      this.selDate = iso;
+      this.pickedId = null;
+      this.tab = 'staff';
+      this.syncUrl();
+      this.$nextTick(() => {
+        const panel = document.querySelector('.cal-panel');
+        if (panel && window.innerWidth < 900) {
+          panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      });
     },
 
     get listItems() {
@@ -63,6 +122,16 @@ function calendarPage(data) {
     showTab(name) {
       this.tab = name;
       this.clearPick();
+    },
+
+    /** ลิงก์ปุ่ม "+ บันทึกการลา" — กลับมาที่เดือนนี้ วันนี้ และแถบพนักงานหลังบันทึก */
+    get leaveAddUrl() {
+      const back = new URL(window.location.href);
+      if (this.selDate) back.searchParams.set('d', this.selDate);
+      back.searchParams.set('tab', 'staff');
+      back.searchParams.delete('a');
+      return '/leaves?add=1&date=' + this.staffDay
+           + '&next=' + encodeURIComponent(back.pathname + back.search);
     },
 
     /** กดกิจกรรมจากลิสต์
@@ -121,9 +190,10 @@ function calendarPage(data) {
       this.syncUrl();
     },
 
-    /** กดช่องวัน — ไฮไลต์ไว้เฉยๆ ใช้เป็นวันตั้งต้นตอนกดเพิ่มงาน */
+    /** กดช่องวัน — ไฮไลต์ไว้เฉยๆ ใช้เป็นวันตั้งต้นตอนกดเพิ่มงาน
+     *  ในแถบพนักงาน กดซ้ำไม่ยกเลิกการเลือก ไม่งั้นแถบจะเด้งกลับไปแสดงวันนี้เฉยๆ */
     pickDay(iso) {
-      this.selDate = this.selDate === iso ? null : iso;
+      this.selDate = (this.selDate === iso && this.tab !== 'staff') ? null : iso;
       this.pickedId = null;
       this.syncUrl();
     },
@@ -142,6 +212,12 @@ function calendarPage(data) {
         url.searchParams.set('a', String(this.pickedId));
       } else {
         url.searchParams.delete('a');
+      }
+      // จำเฉพาะแถบพนักงาน — สองแถบแรกเดาจากข้อมูลได้เอง (ดู init)
+      if (this.tab === 'staff') {
+        url.searchParams.set('tab', 'staff');
+      } else {
+        url.searchParams.delete('tab');
       }
       history.replaceState(null, '', url.pathname + url.search);
     },

@@ -5,6 +5,8 @@
 เผื่อวันหนึ่งอยากได้กลับมา แต่ไม่มีหน้าจอไหนเรียกใช้แล้ว
 """
 
+from datetime import timedelta
+
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
 
@@ -12,7 +14,7 @@ from auth import require_login
 from forms import OptInt
 from database import fetchall, get_conn
 from services import activities as act
-from services import calgrid, thaidate
+from services import calgrid, staffing, thaidate
 from view import page, panel_data
 
 router = APIRouter()
@@ -37,12 +39,15 @@ PANEL_AHEAD_DAYS = 30
 
 @router.get("/calendar")
 def calendar_page(request: Request, y: int = 0, m: int = 0, d: str = "", a: int = 0,
+                  tab: str = "",
                   assignee_id: OptInt = None, category_id: OptInt = None,
                   status: str = ""):
     """`a` = id ของกิจกรรมที่ให้กางรายละเอียดไว้ตั้งแต่โหลดหน้า
 
     ใช้ตอนผู้ใช้กดกิจกรรมในลิสต์ที่อยู่คนละเดือนกับปฏิทินที่เปิดอยู่ —
     ต้องโหลดหน้าใหม่เพื่อไปเดือนนั้น แล้วกางรายละเอียดต่อให้เหมือนไม่มีอะไรเกิดขึ้น
+
+    `tab=staff` = เปิดแถบพนักงานไว้ (กลับมาจากหน้าวันลา) · แถบอื่นไม่ต้องส่ง JS เดาเองได้
     """
     user = require_login(request)
     today = thaidate.today()
@@ -58,7 +63,29 @@ def calendar_page(request: Request, y: int = 0, m: int = 0, d: str = "", a: int 
         # เติมผู้ช่วยก่อน annotate เสมอ — annotate คิด can_run จาก helper_ids
         items = act.attach_helpers(conn, act.list_between(conn, grid_start, grid_end, filters))
         act.annotate(items, user)
-        weeks = calgrid.build_weeks(year, month, items, today)
+
+        # การลาขึ้นเป็นแถบบนปฏิทินเหมือนตอนที่ยังเป็นกิจกรรม (§29.4) แต่มาจากตารางของตัวเอง
+        # และ **ไม่ปน** เข้า items — ลิสต์งานต่อไป/งานค้างต้องไม่มีการลา
+        # ตัวกรองผู้รับผิดชอบใช้กับการลาด้วย (ดูเฉพาะคนเดียวก็ควรเห็นเฉพาะการลาของเขา)
+        # ส่วนตัวกรองประเภท/สถานะเป็นเรื่องของกิจกรรม ไม่เกี่ยวกับการลา
+        leaves = staffing.between(conn, grid_start, grid_end, filters["assignee_id"])
+        weeks = calgrid.build_weeks(year, month, items + staffing.bar_items(leaves), today)
+
+        # แถบ "พนักงาน" ในกล่องข้าง — ส่งทะเบียนคนกับรายการลาทั้งเดือนไปทีเดียว
+        # ให้ JS แยก "ลา / มาทำงาน" ตามวันที่กดเอง (เทียบ ISO เป็นข้อความ) เบากว่าส่งรายวัน
+        # 42 วัน × ทุกคน หลายเท่า — สำคัญบนมือถือที่เน็ตฟาร์มช้า
+        staff_rows = fetchall(conn, """
+            SELECT s.id, s.name, s.color, d.name AS department
+              FROM staff s LEFT JOIN departments d ON d.id = s.department_id
+             WHERE s.active
+             ORDER BY d.sort_order NULLS LAST, d.name, s.sort_order, s.name
+        """)
+        # ชื่อวันไทยของทุกช่องในตาราง — JS ห้ามจัดรูปวันไทยเอง (กติกา 14)
+        day_labels = {}
+        cursor = grid_start
+        while cursor <= grid_end:
+            day_labels[cursor.isoformat()] = thaidate.long(cursor)
+            cursor += timedelta(days=1)
 
         # วันที่ถูกเลือกไว้ (ไฮไลต์ในตาราง + ใช้เป็นวันตั้งต้นของปุ่มเพิ่มงาน)
         selected = thaidate.parse_iso(d)
@@ -84,6 +111,11 @@ def calendar_page(request: Request, y: int = 0, m: int = 0, d: str = "", a: int 
                     items_json=panel_data(items),
                     next_json=panel_data(next_items),
                     overdue_json=panel_data(groups["overdue"]),
+                    staff_json=[{"id": s["id"], "name": s["name"], "color": s["color"],
+                                 "department": s["department"] or ""} for s in staff_rows],
+                    leaves_json=staffing.panel_data(leaves),
+                    day_labels=day_labels,
+                    tab="staff" if tab == "staff" else "",
                     ahead_days=PANEL_AHEAD_DAYS,
                     picked_id=a or 0,
                     day_index=calgrid.day_index(items),

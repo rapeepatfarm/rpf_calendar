@@ -12,6 +12,10 @@ from datetime import date, timedelta
 # เกินกว่านี้ในสัปดาห์เดียว ช่องปฏิทินจะสูงจนใช้งานไม่ได้ ที่เหลือขึ้นเป็น "+N"
 MAX_LANES = 4
 
+# แถบการลา (lane_rank 0, v2) ได้ชั้นเพิ่มต่างหากไม่กินโควตาของกิจกรรม — แต่ก็มีเพดาน
+# ไม่งั้นสัปดาห์สงกรานต์ที่ลากัน 10 คนจะสูงเป็นเมตร · ที่เกินไป "+N" และดูได้ในแถบพนักงาน
+MAX_LEAVE_LANES = 3
+
 
 def month_bounds(year: int, month: int) -> tuple[date, date, date, date]:
     """คืน (วันแรกของเดือน, วันสุดท้ายของเดือน, วันแรกของตาราง, วันสุดท้ายของตาราง)
@@ -29,8 +33,14 @@ def _sort_key(item: dict):
     """ลำดับการวางแถบ — ยาวก่อนสั้น เพื่อให้แถบยาวได้ชั้นบนและอ่านง่าย
 
     ถ้าเรียงตามความสำคัญอย่างเดียว แถบยาวจะถูกดันลงล่างแล้วสายตาไล่ตามยาก
+
+    `lane_rank` มาก่อนทุกอย่าง — แถบการลา (v2) ตั้งเป็น 0 จึงได้จองชั้นก่อนกิจกรรมเสมอ
+    ไม่งั้นวันที่มีวัคซีน 4 รายการจะกินครบ MAX_LANES แล้วแถบลาหลุดไปอยู่ใน "+N"
+    ทั้งที่ผู้ใช้อยากเห็นทันทีว่าใครลา (§29.4) · กิจกรรมที่หลุดยังอยู่ในลิสต์ของกล่องข้าง
+    แต่การลาไม่มีที่อื่นให้เห็นนอกจากแถบกับแถบพนักงาน
     """
-    return (item["planned_date"], -item["span_days"], item["priority"], item["id"])
+    return (item.get("lane_rank", 1), item["planned_date"], -item["span_days"],
+            item["priority"], item["id"])
 
 
 def build_weeks(year: int, month: int, items: list[dict], today: date) -> list[dict]:
@@ -53,6 +63,9 @@ def build_weeks(year: int, month: int, items: list[dict], today: date) -> list[d
         # lanes[i] = คอลัมน์สุดท้ายที่ชั้น i ถูกจองไว้ถึง (0 = ว่าง)
         lane_ends: list[int] = []
         bars, overflow = [], {}
+        # ชั้นที่แถบการลาเปิดไว้ในสัปดาห์นี้ — กิจกรรมได้โควตา MAX_LANES ต่างหากจากตรงนี้
+        # (การลามาก่อนเสมอตาม _sort_key จึงรู้ค่านี้ครบก่อนถึงกิจกรรมตัวแรก)
+        leave_lanes = 0
 
         for item in ordered:
             start = max(item["planned_date"], week_start)
@@ -65,7 +78,9 @@ def build_weeks(year: int, month: int, items: list[dict], today: date) -> list[d
 
             lane = next((i for i, taken in enumerate(lane_ends) if taken < col_start),
                         len(lane_ends))
-            if lane >= MAX_LANES:
+            is_leave = item.get("lane_rank", 1) == 0
+            cap = MAX_LEAVE_LANES if is_leave else MAX_LANES + leave_lanes
+            if lane >= cap:
                 # ไม่มีที่แล้ว — นับเป็น "+N" ของทุกวันที่แถบนี้พาดผ่าน
                 for offset in range(col_start, col_end + 1):
                     day = week_start + timedelta(days=offset - 1)
@@ -76,6 +91,8 @@ def build_weeks(year: int, month: int, items: list[dict], today: date) -> list[d
                 lane_ends.append(col_end)
             else:
                 lane_ends[lane] = col_end
+            if is_leave:
+                leave_lanes = max(leave_lanes, lane + 1)
 
             bars.append({
                 "item": item,

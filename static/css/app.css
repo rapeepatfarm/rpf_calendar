@@ -326,6 +326,16 @@ a:hover { text-decoration: underline; }
 .cal-bar-item.is-sel .t { color: rgba(255,255,255,.8); }
 .cal-bar-item.is-dim { opacity: .34; }
 
+/* แถบการลา (v2) — ลายทแยงสีประจำตัวคน ให้ต่างจากแถบกิจกรรมชัดตั้งแต่มองแวบแรก */
+.cal-bar-item.leave {
+  border-left-style: dashed;
+  color: var(--text-dim); font-style: italic;
+  background: repeating-linear-gradient(135deg,
+    color-mix(in srgb, var(--bar-color) 26%, var(--surface)) 0 5px,
+    color-mix(in srgb, var(--bar-color) 8%, var(--surface)) 5px 10px);
+}
+.cal-bar-item.leave:hover { color: var(--text); }
+
 .cal-legend { margin-top: 12px; }
 
 /* ── แผงรายละเอียดของวันที่เลือก ───────────────────────────── */
@@ -361,6 +371,39 @@ a:hover { text-decoration: underline; }
 }
 .panel-tab-n.late {
   background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger);
+}
+.panel-tab-n.leave {
+  background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn);
+}
+
+/* ── แถบพนักงานในกล่องข้าง (v2) ─────────────────────────────── */
+.staff-day-head { margin: 2px 0 12px; }
+.staff-day-title { font-size: 14px; font-weight: 650; }
+.staff-sec { margin-bottom: 14px; }
+.staff-sec-head {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; font-weight: 600; color: var(--text-faint);
+  text-transform: uppercase; letter-spacing: .02em; margin-bottom: 7px;
+}
+.staff-empty { font-size: 13px; color: var(--text-faint); padding: 4px 0 2px; }
+.staff-leave {
+  display: flex; align-items: center; gap: 9px;
+  padding: 8px 10px; margin-bottom: 6px;
+  border: 1px dashed var(--border); border-radius: var(--radius-sm);
+}
+.staff-leave-main { flex: 1; min-width: 0; }
+.staff-leave-name { display: block; font-size: 13.5px; font-weight: 600; }
+.staff-leave-sub {
+  display: block; font-size: 11.5px; color: var(--text-faint); margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.staff-group { margin-bottom: 8px; }
+.staff-group-name { font-size: 12px; color: var(--text-dim); margin-bottom: 4px; }
+.chip-list { display: flex; flex-wrap: wrap; gap: 5px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 9px; border-radius: 99px; font-size: 12.5px;
+  background: var(--surface-2); border: 1px solid var(--border);
 }
 
 /* ── หนึ่งบรรทัดในลิสต์ของแผง ─────────────────────────────── */

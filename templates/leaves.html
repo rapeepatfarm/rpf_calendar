@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% block title %}วันลา · RPF Calendar{% endblock %}
+{% block page_title %}วันลาพนักงาน{% endblock %}
+
+{% set blank = {'id': '', 'staff_id': preset_staff, 'leave_type_id': '',
+                'date_from': preset_date, 'date_to': preset_date, 'part': 'full', 'note': ''} %}
+{% set filtering = flt.staff_id or flt.department_id %}
+
+{% block topbar_extra %}
+<a class="btn btn-sm" href="/master/staff">‹ พนักงาน</a>
+{% endblock %}
+
+{% block content %}
+<div x-data='{ editing: {{ "true" if open_add else "false" }}, f: {{ blank | tojson }} }'>
+
+{% macro leave_rows(rows, empty_text) %}
+  {% for r in rows %}
+  <tr>
+    <td style="white-space:nowrap">
+      <i class="swatch" style="background:{{ r.staff_color }}"></i> {{ r.staff_name }}
+      {% if r.department_name %}<span class="faint" style="font-size:12px"> · {{ r.department_name }}</span>{% endif %}
+    </td>
+    <td style="white-space:nowrap">{{ d_span(r.date_from, r.date_to) }}</td>
+    <td>
+      {% if r.part == 'full' %}{{ r.span_days }} วัน
+      {% else %}<span class="badge">{{ PART_LABELS[r.part] }}</span>{% endif %}
+    </td>
+    <td>
+      {% if r.type_name %}
+      <span class="badge" style="background:color-mix(in srgb, {{ r.type_color }} 16%, transparent); color:{{ r.type_color }}">{{ r.type_name }}</span>
+      {% else %}<span class="faint">-</span>{% endif %}
+    </td>
+    <td class="faint" style="max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap"
+        title="{{ r.note }}">{{ r.note }}</td>
+    <td class="row-actions">
+      <button class="btn btn-sm" x-on:click='f = {{ {
+        'id': r.id, 'staff_id': r.staff_id, 'leave_type_id': r.leave_type_id or '',
+        'date_from': r.date_from.isoformat(), 'date_to': r.date_to.isoformat(),
+        'part': r.part, 'note': r.note } | tojson }}; editing = true'>แก้ไข</button>
+      <form method="post" action="/leaves/{{ r.id }}/delete" style="display:inline"
+            onsubmit="return confirm('ลบการลาของ {{ r.staff_name }} {{ d_span(r.date_from, r.date_to) }}?')">
+        <input type="hidden" name="f_staff_id" value="{{ flt.staff_id or '' }}">
+        <input type="hidden" name="f_department_id" value="{{ flt.department_id or '' }}">
+        <button class="btn btn-sm btn-danger" type="submit">ลบ</button>
+      </form>
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="6"><div class="empty">{{ empty_text }}</div></td></tr>
+  {% endfor %}
+{% endmacro %}
+
+<div class="card">
+  <div class="card-head">
+    <h2 class="card-title">กำลังลา / จะลา</h2>
+    <span class="faint" style="font-size:12.5px">{{ upcoming | length }} รายการ</span>
+
+    <form method="get" action="/leaves" class="head-filters">
+      <select name="staff_id" onchange="this.form.submit()" aria-label="กรองตามพนักงาน">
+        <option value="">ทุกคน</option>
+        {% for s in staff %}
+        <option value="{{ s.id }}" {{ 'selected' if flt.staff_id == s.id }}>{{ s.name }}</option>
+        {% endfor %}
+      </select>
+      <select name="department_id" onchange="this.form.submit()" aria-label="กรองตามฝ่าย">
+        <option value="">ทุกฝ่าย</option>
+        {% for d in departments %}
+        <option value="{{ d.id }}" {{ 'selected' if flt.department_id == d.id }}>{{ d.name }}</option>
+        {% endfor %}
+      </select>
+      {% if filtering %}<a class="btn btn-sm" href="/leaves">ล้าง</a>{% endif %}
+    </form>
+
+    <div class="spacer"></div>
+    <a class="btn btn-sm" href="/master/leave-types">ประเภทการลา</a>
+    <button class="btn btn-primary btn-sm"
+            x-on:click='f = {{ blank | tojson }}; editing = true'>+ บันทึกการลา</button>
+  </div>
+  <div class="card-body tight">
+    <div class="table-scroll">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>พนักงาน</th><th>ช่วงวัน</th><th>ระยะ</th><th>ประเภท</th><th>หมายเหตุ</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {{ leave_rows(upcoming, 'ไม่มีใครลาในช่วงนี้' if not filtering else 'ไม่มีรายการตรงกับตัวกรอง') }}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-head">
+    <h2 class="card-title">ที่ผ่านมา</h2>
+    <span class="faint" style="font-size:12.5px">{{ past_days }} วันย้อนหลัง · {{ past | length }} รายการ</span>
+  </div>
+  <div class="card-body tight">
+    <div class="table-scroll">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>พนักงาน</th><th>ช่วงวัน</th><th>ระยะ</th><th>ประเภท</th><th>หมายเหตุ</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {{ leave_rows(past, 'ไม่มีการลาใน ' ~ past_days ~ ' วันที่ผ่านมา') }}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="hint" style="margin-top:12px">
+  การลาจะขึ้นเป็นแถบบนปฏิทินและในแถบ "พนักงาน" ของกล่องข้าง ·
+  ลาครึ่งวันบันทึกได้เฉพาะรายการที่เป็นวันเดียว — ลา 4.5 วัน = รายการ 4 วัน + รายการครึ่งวัน
+</div>
+
+<template x-if="editing">
+  <div>
+    <div class="modal-scrim" x-on:click="editing = false"></div>
+    <div class="modal">
+      <form method="post" action="/leaves/save">
+        <div class="modal-head">
+          <h3 x-text="f.id ? 'แก้ไขการลา' : 'บันทึกการลา'"></h3>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" name="id" :value="f.id">
+          <input type="hidden" name="next" value="{{ next_url }}">
+          <input type="hidden" name="f_staff_id" value="{{ flt.staff_id or '' }}">
+          <input type="hidden" name="f_department_id" value="{{ flt.department_id or '' }}">
+          <div class="form-grid">
+            <div class="field">
+              <label>พนักงาน *</label>
+              <select name="staff_id" x-model="f.staff_id" required>
+                <option value="">— เลือก —</option>
+                {% for s in staff %}
+                <option value="{{ s.id }}">{{ s.name }}{{ ' · ' ~ s.department_name if s.department_name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="field">
+              <label>ประเภทการลา</label>
+              <select name="leave_type_id" x-model="f.leave_type_id">
+                <option value="">ไม่ระบุ</option>
+                {% for t in leave_types %}
+                <option value="{{ t.id }}">{{ t.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="field">
+              <label>ตั้งแต่วันที่ *</label>
+              <input name="date_from" type="date" x-model="f.date_from" required
+                     x-on:change="if (!f.date_to || f.date_to < f.date_from) f.date_to = f.date_from">
+            </div>
+            <div class="field">
+              <label>ถึงวันที่</label>
+              <input name="date_to" type="date" x-model="f.date_to" :min="f.date_from"
+                     x-on:change="if (f.date_to !== f.date_from) f.part = 'full'">
+              <div class="hint">เว้นว่างหรือวันเดียวกัน = ลาวันเดียว</div>
+            </div>
+          </div>
+          {# ครึ่งวันเลือกได้เฉพาะตอนเป็นวันเดียว — เซิร์ฟเวอร์บังคับซ้ำอีกชั้น #}
+          <div class="field" x-show="!f.date_to || f.date_to === f.date_from">
+            <label>ระยะการลา</label>
+            <select name="part" x-model="f.part">
+              {% for value, label in PART_LABELS.items() %}
+              <option value="{{ value }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label>หมายเหตุ</label>
+            <input name="note" x-model="f.note" maxlength="200" placeholder="เช่น ไปธุระต่างจังหวัด">
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn" type="button" x-on:click="editing = false">ยกเลิก</button>
+          <button class="btn btn-primary" type="submit">บันทึก</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</template>
+
+</div>
+{% endblock %}

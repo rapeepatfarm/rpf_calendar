@@ -19,11 +19,18 @@
 {% endblock %}
 
 {% block content %}
+{# staff/leaves/dayLabels ใส่ `or` กันค่าไม่มา — เทมเพลตโหลดใหม่เองทันทีที่แก้ไฟล์
+   แต่ router ตัวใหม่จะมาหลังรีสตาร์ต ช่วงนั้นหน้าปฏิทินต้องยังเปิดได้ #}
 <div class="cal-layout"
      x-data='calendarPage({
        items: {{ items_json | tojson }},
        next: {{ next_json | tojson }},
        overdue: {{ overdue_json | tojson }},
+       staff: {{ (staff_json or []) | tojson }},
+       leaves: {{ (leaves_json or []) | tojson }},
+       dayLabels: {{ (day_labels or {}) | tojson }},
+       canManage: {{ "true" if can_manage else "false" }},
+       tab: "{{ tab }}",
        selected: "{{ selected }}",
        picked: {{ picked_id }},
        today: "{{ today().isoformat() }}"
@@ -68,6 +75,20 @@
         <div class="cal-fg">
           {% for bar in week['bars'] %}
           {% set a = bar.item %}
+          {% if a.kind == 'leave' %}
+          {# แถบการลา — ใช้ชั้นเดียวกับกิจกรรมแต่หน้าตาต่างชัด (ลายทแยง สีประจำตัวคน)
+             กดแล้วเปิดแถบ "พนักงาน" ของวันแรกที่มองเห็นในสัปดาห์นี้ ไม่ใช่รายละเอียดกิจกรรม #}
+          <button type="button"
+                  class="cal-bar-item leave{{ ' clip-l' if bar.clipped_left }}{{ ' clip-r' if bar.clipped_right }}"
+                  style="grid-column: {{ bar.col_start }} / span {{ bar.span }};
+                         grid-row: {{ bar.lane + 1 }};
+                         --bar-color: {{ a.staff_color }}"
+                  :class="{ 'is-dim': pickedId !== null }"
+                  x-on:click.stop="pickStaffDay('{{ week['days'][bar.col_start - 1].date }}')"
+                  title="{{ a.tooltip }}">
+            <span class="cal-bar-title">{{ a.label }}</span>
+          </button>
+          {% else %}
           <button type="button"
                   class="cal-bar-item st-{{ a.status }}{{ ' late' if a.days_late }}{{ ' clip-l' if bar.clipped_left }}{{ ' clip-r' if bar.clipped_right }}"
                   style="grid-column: {{ bar.col_start }} / span {{ bar.span }};
@@ -81,6 +102,7 @@
             {%- endif -%}
             <span class="cal-bar-title">{{ a.title }}</span>
           </button>
+          {% endif %}
           {% endfor %}
         </div>
       </div>
@@ -89,7 +111,7 @@
 
     <div class="hint cal-legend">
       แถบสีคือประเภทกิจกรรม · แถบที่ลากยาวคือกิจกรรมหลายวัน · พื้นแดงคืองานที่เลยกำหนดแล้ว
-      ยังไม่ได้เริ่ม · แตะแถบกิจกรรมเพื่อดูรายละเอียดในกล่องด้านข้าง
+      ยังไม่ได้เริ่ม · แถบลายทแยง "ลา …" คือพนักงานลา แตะแล้วดูว่าวันนั้นใครลา/ใครมาในแถบ "พนักงาน"
     </div>
   </div>
 
@@ -107,6 +129,13 @@
         งานค้าง
         <span class="panel-tab-n late" x-show="overdueItems.length"
               x-text="overdueItems.length"></span>
+      </button>
+      {# แถบพนักงาน — ผูกกับวันที่กดในปฏิทิน (ต่างจากสองแถบแรกที่ไม่ผูกกับเดือน)
+         ตัวเลขคือจำนวนคนลาของวันนั้น #}
+      <button type="button" class="panel-tab" role="tab"
+              :class="{ 'on': tab === 'staff' }" x-on:click="showTab('staff')">
+        พนักงาน
+        <span class="panel-tab-n leave" x-show="dayLeaves.length" x-text="dayLeaves.length"></span>
       </button>
     </div>
 
@@ -127,8 +156,68 @@
       </div>
     </template>
 
+    {# ── แถบพนักงาน: ใครลา / ใครมาทำงาน ในวันที่เลือก (ไม่เลือก = วันนี้) ── #}
+    <template x-if="!picked && tab === 'staff'">
+      <div class="panel-body">
+        <div class="staff-day-head">
+          <div class="staff-day-title" x-text="dayLabels[staffDay] || staffDay"></div>
+          <div class="hint" x-show="!selDate">ยังไม่ได้เลือกวัน — แสดงของวันนี้ · แตะวันในปฏิทินเพื่อดูวันอื่น</div>
+        </div>
+
+        <div class="staff-sec">
+          <div class="staff-sec-head">
+            <span>ลา</span>
+            <span class="panel-tab-n leave" x-text="dayLeaves.length + ' คน'"></span>
+          </div>
+          <template x-if="dayLeaves.length === 0">
+            <div class="staff-empty">ไม่มีใครลา</div>
+          </template>
+          <template x-for="l in dayLeaves" :key="l.id">
+            <div class="staff-leave">
+              <i class="swatch" :style="'background:' + l.color"></i>
+              <span class="staff-leave-main">
+                <span class="staff-leave-name" x-text="l.name"></span>
+                <span class="staff-leave-sub">
+                  <span x-text="l.part === 'full' ? l.when : l.part_label"></span>
+                  <span x-show="l.note" x-text="' · ' + l.note"></span>
+                </span>
+              </span>
+              <span class="badge" x-show="l.type"
+                    :style="'background:color-mix(in srgb,' + l.type_color + ' 16%, transparent); color:' + l.type_color"
+                    x-text="l.type"></span>
+              <a class="btn btn-sm" x-show="canManage" :href="'/leaves?staff_id=' + l.staff_id"
+                 title="จัดการวันลาของคนนี้">จัดการ</a>
+            </div>
+          </template>
+        </div>
+
+        <div class="staff-sec">
+          <div class="staff-sec-head">
+            <span>มาทำงาน</span>
+            <span class="panel-tab-n" x-text="dayPresent.length + ' คน'"></span>
+          </div>
+          <template x-if="dayPresent.length === 0">
+            <div class="staff-empty">ไม่มีพนักงานในทะเบียน</div>
+          </template>
+          <template x-for="g in presentGroups" :key="g.name">
+            <div class="staff-group">
+              <div class="staff-group-name" x-text="g.name"></div>
+              <div class="chip-list">
+                <template x-for="s in g.staff" :key="s.id">
+                  <span class="chip"><i class="swatch" :style="'background:' + s.color"></i><span x-text="s.name"></span></span>
+                </template>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <a class="btn btn-block" x-show="canManage" style="margin-top:10px"
+           :href="leaveAddUrl">+ บันทึกการลา</a>
+      </div>
+    </template>
+
     {# ── รายการของแถบที่เลือกอยู่ ── #}
-    <template x-if="!picked">
+    <template x-if="!picked && tab !== 'staff'">
       <div class="panel-body">
         <template x-if="listItems.length === 0">
           <div class="empty" x-text="tab === 'overdue'
