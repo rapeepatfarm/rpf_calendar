@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}ฝ่าย · RPF Calendar{% endblock %}
+{% block page_title %}ฝ่าย{% endblock %}
+
+{% set blank = {'id': '', 'name': '', 'sort_order': 0, 'active': True, 'note': ''} %}
+
+{% block content %}
+<div x-data='{ editing: false, f: {{ blank | tojson }} }'>
+
+<div class="card">
+  <div class="card-head">
+    <a class="btn btn-sm" href="/master/staff" title="กลับไปหน้าพนักงาน">‹ พนักงาน</a>
+    <h2 class="card-title">ทะเบียนฝ่าย</h2>
+    <span class="faint" style="font-size:12.5px">{{ rows | length }} ฝ่าย</span>
+    <div class="spacer"></div>
+    <button class="btn btn-primary btn-sm"
+            x-on:click='f = {{ blank | tojson }}; editing = true'>+ เพิ่มฝ่าย</button>
+  </div>
+  <div class="card-body tight">
+    <div class="table-scroll">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>ชื่อฝ่าย</th>
+            <th class="num">พนักงาน</th>
+            <th>หมายเหตุ</th>
+            <th>สถานะ</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for r in rows %}
+          <tr>
+            <td>{{ r.name }}</td>
+            <td class="num">
+              {% if r.staff_n %}
+              <a href="/master/staff?department_id={{ r.id }}">{{ r.staff_n }}</a>
+              {% else %}<span class="faint">0</span>{% endif %}
+            </td>
+            <td class="faint">{{ r.note or '' }}</td>
+            <td>
+              {% if r.active %}<span class="badge st-done">ใช้งาน</span>
+              {% else %}<span class="badge">ปิดใช้งาน</span>{% endif %}
+            </td>
+            <td class="row-actions">
+              <button class="btn btn-sm" x-on:click='f = {{ {
+                'id': r.id, 'name': r.name, 'sort_order': r.sort_order,
+                'active': r.active, 'note': r.note } | tojson }}; editing = true'>แก้ไข</button>
+              <form method="post" action="/master/departments/{{ r.id }}/delete"
+                    style="display:inline"
+                    onsubmit="return confirm('ลบฝ่าย {{ r.name }}?')">
+                <button class="btn btn-sm btn-danger" type="submit">ลบ</button>
+              </form>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5"><div class="empty">ยังไม่มีฝ่าย</div></td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="hint" style="margin-top:12px">
+  ฝ่ายคือหน่วยงานที่พนักงานสังกัด เช่น เลี้ยงไก่ · โรงงานอาหารสัตว์ · BIOGAS ·
+  ใช้กรองรายชื่อและเลือกผู้ปฏิบัติงานทั้งฝ่ายในกิจกรรม
+  · ส่วน "จุดงาน" ย่อยในฝ่าย (โรงเรือน A/B/C) จะอยู่ในหน้าหน้าที่ประจำ
+</div>
+
+<template x-if="editing">
+  <div>
+    <div class="modal-scrim" x-on:click="editing = false"></div>
+    <div class="modal">
+      <form method="post" action="/master/departments/save">
+        <div class="modal-head">
+          <h3 x-text="f.id ? 'แก้ไขฝ่าย' : 'เพิ่มฝ่าย'"></h3>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" name="id" :value="f.id">
+          <div class="field">
+            <label>ชื่อฝ่าย *</label>
+            <input name="name" x-model="f.name" required maxlength="60"
+                   placeholder="เช่น เลี้ยงไก่">
+          </div>
+          <div class="form-grid">
+            <div class="field">
+              <label>ลำดับการแสดง</label>
+              <input name="sort_order" type="number" x-model="f.sort_order">
+            </div>
+            <div class="field">
+              <label>หมายเหตุ</label>
+              <input name="note" x-model="f.note" maxlength="200">
+            </div>
+          </div>
+          <label class="check">
+            <input type="checkbox" name="active" value="1" x-model="f.active">
+            <span>เปิดใช้งาน (ปิดแล้วจะไม่ขึ้นในตัวเลือกฝ่ายตอนกรอกพนักงานใหม่)</span>
+          </label>
+        </div>
+        <div class="modal-foot">
+          <button class="btn" type="button" x-on:click="editing = false">ยกเลิก</button>
+          <button class="btn btn-primary" type="submit">บันทึก</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</template>
+
+</div>
+{% endblock %}

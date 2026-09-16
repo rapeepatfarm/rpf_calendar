@@ -24,8 +24,8 @@
   <a class="link-card" href="/master/staff">
     <span class="link-ico">◍</span>
     <span class="link-text">
-      <strong>ผู้รับผิดชอบ</strong>
-      <span>ทะเบียนคนที่รับงานได้ · ผูกกับบัญชีล็อกอินได้</span>
+      <strong>จัดการพนักงาน</strong>
+      <span>ทะเบียนพนักงาน รหัส ฝ่าย ตำแหน่ง · ผูกกับบัญชีล็อกอินได้</span>
     </span>
   </a>
   <a class="link-card" href="/settings/sync">
@@ -78,7 +78,7 @@
 
 {% if user.role not in ('admin', 'manager') %}
 <div class="hint" style="margin-top:16px">
-  การตั้งค่าประเภทกิจกรรม ผู้รับผิดชอบ และแผนงานประจำ เป็นสิทธิ์ของหัวหน้างานขึ้นไป
+  การตั้งค่าประเภทกิจกรรม พนักงาน และแผนงานประจำ เป็นสิทธิ์ของหัวหน้างานขึ้นไป
 </div>
 {% endif %}
 {% endblock %}

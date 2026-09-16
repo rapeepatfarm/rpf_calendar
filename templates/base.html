@@ -48,8 +48,10 @@
       <a href="/master/categories" class="{{ 'active' if path.startswith('/master/categories') }}">
         <span class="ico">◈</span> ประเภทกิจกรรม
       </a>
-      <a href="/master/staff" class="{{ 'active' if path.startswith('/master/staff') }}">
-        <span class="ico">◍</span> ผู้รับผิดชอบ
+      {# v2: ทะเบียน staff ขยายเป็นพนักงานทั้งฟาร์ม (รหัส ฝ่าย ตำแหน่ง วันลา)
+         หน้าฝ่ายเป็นหน้าลูกของหน้านี้ จึงให้เมนูเดียวกันติดสว่าง #}
+      <a href="/master/staff" class="{{ 'active' if path.startswith('/master/staff') or path.startswith('/master/departments') }}">
+        <span class="ico">◍</span> จัดการพนักงาน
       </a>
 
       {# ต้องอยู่ในบล็อก can_manage ให้ตรงกับสิทธิ์ที่ /settings/sync บังคับจริง

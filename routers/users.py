@@ -62,7 +62,7 @@ def create_user(request: Request,
             """, (username, hash_password(password), as_text(display_name), role))
     except errors.UniqueViolation:
         return _back(err=f"มีชื่อผู้ใช้ \"{username}\" อยู่แล้ว")
-    return _back(ok=f"สร้างบัญชี {username} แล้ว — อย่าลืมผูกกับทะเบียนผู้รับผิดชอบ")
+    return _back(ok=f"สร้างบัญชี {username} แล้ว — อย่าลืมผูกกับทะเบียนพนักงาน")
 
 
 @router.post("/{user_id}/update")

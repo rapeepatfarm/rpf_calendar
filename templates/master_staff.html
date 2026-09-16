@@ -1,27 +1,54 @@
 {% extends "base.html" %}
-{% block title %}ผู้รับผิดชอบ · RPF Calendar{% endblock %}
-{% block page_title %}ผู้รับผิดชอบ{% endblock %}
+{% block title %}จัดการพนักงาน · RPF Calendar{% endblock %}
+{% block page_title %}จัดการพนักงาน{% endblock %}
 
-{% set blank = {'id': '', 'name': '', 'position': '', 'phone': '', 'color': '#2f7de1',
-                'user_id': '', 'sort_order': 0, 'active': True, 'note': ''} %}
+{% set blank = {'id': '', 'name': '', 'code': '', 'department_id': '', 'position': '',
+                'phone': '', 'color': '#2f7de1', 'user_id': '', 'sort_order': 0,
+                'active': True, 'note': ''} %}
+{% set filtering = flt.department_id or flt.position %}
 
 {% block content %}
 <div x-data='{ editing: false, f: {{ blank | tojson }} }'>
 
 <div class="card">
   <div class="card-head">
-    <h2 class="card-title">ทะเบียนผู้รับผิดชอบ</h2>
-    <span class="faint" style="font-size:12.5px">{{ rows | length }} คน</span>
+    <h2 class="card-title">ทะเบียนพนักงาน</h2>
+    <span class="faint" style="font-size:12.5px">
+      {% if filtering %}{{ rows | length }} จาก {{ total_n }} คน{% else %}{{ rows | length }} คน{% endif %}
+    </span>
+
+    {# ตัวกรอง — เปลี่ยนแล้วส่งทันที ไม่ต้องมีปุ่ม "ใช้ตัวกรอง" เพราะเป็นแค่สองช่อง #}
+    <form method="get" action="/master/staff" class="head-filters">
+      <select name="department_id" onchange="this.form.submit()" aria-label="กรองตามฝ่าย">
+        <option value="">ทุกฝ่าย</option>
+        {% for d in departments %}
+        <option value="{{ d.id }}" {{ 'selected' if flt.department_id == d.id }}>
+          {{ d.name }}{{ ' (ปิดใช้งาน)' if not d.active }}
+        </option>
+        {% endfor %}
+      </select>
+      <select name="position" onchange="this.form.submit()" aria-label="กรองตามตำแหน่ง">
+        <option value="">ทุกตำแหน่ง</option>
+        {% for p in positions %}
+        <option value="{{ p }}" {{ 'selected' if flt.position == p }}>{{ p }}</option>
+        {% endfor %}
+      </select>
+      {% if filtering %}<a class="btn btn-sm" href="/master/staff">ล้าง</a>{% endif %}
+    </form>
+
     <div class="spacer"></div>
+    <a class="btn btn-sm" href="/master/departments">จัดการฝ่าย</a>
     <button class="btn btn-primary btn-sm"
-            x-on:click='f = {{ blank | tojson }}; editing = true'>+ เพิ่มคน</button>
+            x-on:click='f = {{ blank | tojson }}; editing = true'>+ เพิ่มพนักงาน</button>
   </div>
   <div class="card-body tight">
     <div class="table-scroll">
       <table class="tbl">
         <thead>
           <tr>
+            <th>รหัส</th>
             <th>ชื่อ</th>
+            <th>ฝ่าย</th>
             <th>ตำแหน่ง</th>
             <th>เบอร์โทร</th>
             <th>บัญชีล็อกอิน</th>
@@ -33,7 +60,9 @@
         <tbody>
         {% for r in rows %}
           <tr>
-            <td><i class="swatch" style="background:{{ r.color }}"></i> {{ r.name }}</td>
+            <td class="mono">{{ r.code or '-' }}</td>
+            <td style="white-space:nowrap"><i class="swatch" style="background:{{ r.color }}"></i> {{ r.name }}</td>
+            <td>{{ r.department_name or '-' }}</td>
             <td>{{ r.position or '-' }}</td>
             <td class="mono">{{ r.phone or '-' }}</td>
             <td>
@@ -47,18 +76,24 @@
             </td>
             <td class="row-actions">
               <button class="btn btn-sm" x-on:click='f = {{ {
-                'id': r.id, 'name': r.name, 'position': r.position, 'phone': r.phone,
-                'color': r.color, 'user_id': r.user_id or '', 'sort_order': r.sort_order,
-                'active': r.active, 'note': r.note } | tojson }}; editing = true'>แก้ไข</button>
+                'id': r.id, 'name': r.name, 'code': r.code,
+                'department_id': r.department_id or '', 'position': r.position,
+                'phone': r.phone, 'color': r.color, 'user_id': r.user_id or '',
+                'sort_order': r.sort_order, 'active': r.active,
+                'note': r.note } | tojson }}; editing = true'>แก้ไข</button>
               <form method="post" action="/master/staff/{{ r.id }}/delete"
                     style="display:inline"
                     onsubmit="return confirm('ลบ {{ r.name }} ออกจากทะเบียน?')">
+                <input type="hidden" name="f_department_id" value="{{ flt.department_id or '' }}">
+                <input type="hidden" name="f_position" value="{{ flt.position }}">
                 <button class="btn btn-sm btn-danger" type="submit">ลบ</button>
               </form>
             </td>
           </tr>
         {% else %}
-          <tr><td colspan="7"><div class="empty">ยังไม่มีผู้รับผิดชอบในทะเบียน</div></td></tr>
+          <tr><td colspan="9"><div class="empty">
+            {% if filtering %}ไม่มีพนักงานตรงกับตัวกรอง{% else %}ยังไม่มีพนักงานในทะเบียน{% endif %}
+          </div></td></tr>
         {% endfor %}
         </tbody>
       </table>
@@ -67,7 +102,7 @@
 </div>
 
 <div class="hint" style="margin-top:12px">
-  คนที่ไม่มีบัญชีล็อกอินยังถูกระบุเป็นผู้รับผิดชอบได้ตามปกติ
+  คนที่ไม่มีบัญชีล็อกอินยังถูกระบุเป็นผู้รับผิดชอบหรือผู้ปฏิบัติงานได้ตามปกติ
   แต่ต้องให้หัวหน้ากดเริ่ม/สิ้นสุดงานแทน — ผูกบัญชีให้แล้วเขาจะกดเองจากมือถือได้
 </div>
 
@@ -77,20 +112,44 @@
     <div class="modal">
       <form method="post" action="/master/staff/save">
         <div class="modal-head">
-          <h3 x-text="f.id ? 'แก้ไขผู้รับผิดชอบ' : 'เพิ่มผู้รับผิดชอบ'"></h3>
+          <h3 x-text="f.id ? 'แก้ไขพนักงาน' : 'เพิ่มพนักงาน'"></h3>
         </div>
         <div class="modal-body">
           <input type="hidden" name="id" :value="f.id">
-          <div class="field">
-            <label>ชื่อ *</label>
-            <input name="name" x-model="f.name" required maxlength="80">
+          {# คงตัวกรองไว้หลังบันทึก จะได้ไม่เด้งกลับไปเห็นทุกฝ่ายรวมกัน #}
+          <input type="hidden" name="f_department_id" value="{{ flt.department_id or '' }}">
+          <input type="hidden" name="f_position" value="{{ flt.position }}">
+          <div class="form-grid">
+            <div class="field">
+              <label>รหัสพนักงาน</label>
+              <input name="code" x-model="f.code" maxlength="20" placeholder="เช่น RPF001"
+                     style="text-transform:uppercase">
+            </div>
+            <div class="field">
+              <label>ชื่อ *</label>
+              <input name="name" x-model="f.name" required maxlength="80">
+            </div>
           </div>
           <div class="form-grid">
             <div class="field">
+              <label>ฝ่าย</label>
+              <select name="department_id" x-model="f.department_id">
+                <option value="">ยังไม่ระบุ</option>
+                {% for d in departments if d.active %}
+                <option value="{{ d.id }}">{{ d.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="field">
               <label>ตำแหน่ง</label>
               <input name="position" x-model="f.position" maxlength="60"
-                     placeholder="เช่น หัวหน้าเล้า A">
+                     list="position-list" placeholder="เช่น หัวหน้าเล้า A">
+              <datalist id="position-list">
+                {% for p in positions %}<option value="{{ p }}">{% endfor %}
+              </datalist>
             </div>
+          </div>
+          <div class="form-grid">
             <div class="field">
               <label>เบอร์โทร</label>
               <input name="phone" x-model="f.phone" maxlength="30">
@@ -125,7 +184,7 @@
           </div>
           <label class="check">
             <input type="checkbox" name="active" value="1" x-model="f.active">
-            <span>ยังทำงานอยู่ (ปิดแล้วจะไม่ขึ้นในตัวเลือกผู้รับผิดชอบ)</span>
+            <span>ยังทำงานอยู่ (ปิดแล้วจะไม่ขึ้นในตัวเลือกผู้รับผิดชอบ/ผู้ปฏิบัติงาน)</span>
           </label>
         </div>
         <div class="modal-foot">
