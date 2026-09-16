@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}แผนงานประจำ · RPF Calendar{% endblock %}
+{% block page_title %}แผนงานประจำ{% endblock %}
+
+{% block topbar_extra %}
+<a class="btn btn-primary btn-sm" href="/plans/new">+ เพิ่มแผนงาน</a>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-head">
+    <h2 class="card-title">แผนงานที่ทำซ้ำ</h2>
+    <span class="faint" style="font-size:12.5px">{{ rows | length }} แผน</span>
+  </div>
+  <div class="card-body tight">
+    <div class="table-scroll">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>ชื่องาน</th>
+            <th>ทำซ้ำเมื่อไร</th>
+            <th>ผู้รับผิดชอบ</th>
+            <th>ครั้งถัดไป</th>
+            <th class="num">วางไว้แล้ว</th>
+            <th>สถานะ</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for r in rows %}
+          <tr>
+            <td>
+              {% if r.category_color %}
+              <i class="swatch" style="background:{{ r.category_color }}"></i>
+              {% endif %}
+              <a href="/plans/{{ r.id }}/edit">{{ r.title }}</a>
+              {% if r.priority <= 2 %}
+              <span class="badge p{{ r.priority }}">{{ PRIORITY_LABELS[r.priority] }}</span>
+              {% endif %}
+            </td>
+            <td>
+              {{ r.rule_text }}
+              {% if r.anchor_mode == 'after_done' %}
+              <span class="badge" title="รอบถัดไปเลื่อนตามวันที่ทำเสร็จจริง">↷ ตามงานจริง</span>
+              {% endif %}
+            </td>
+            <td>{{ r.assignee_name or '-' }}</td>
+            <td>{{ d_short(r.next_on) if r.next_on else '-' }}</td>
+            <td class="num">{{ r.made_n }}</td>
+            <td>
+              {% if r.active %}<span class="badge st-done">เปิดใช้</span>
+              {% else %}<span class="badge">ปิดอยู่</span>{% endif %}
+            </td>
+            <td class="row-actions">
+              <a class="btn btn-sm" href="/plans/{{ r.id }}/edit">แก้ไข</a>
+              <form method="post" action="/plans/{{ r.id }}/toggle" style="display:inline">
+                <button class="btn btn-sm" type="submit">
+                  {{ 'ปิด' if r.active else 'เปิด' }}
+                </button>
+              </form>
+              <form method="post" action="/plans/{{ r.id }}/delete" style="display:inline"
+                    onsubmit="return confirm('ลบแผนงาน {{ r.title }}? กิจกรรมที่ทำไปแล้วจะยังอยู่ในปฏิทิน แต่กิจกรรมอนาคตที่ยังไม่ได้เริ่มจะถูกเอาออก')">
+                <button class="btn btn-sm btn-danger" type="submit">ลบ</button>
+              </form>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="7"><div class="empty">
+            ยังไม่มีแผนงานประจำ — กด "เพิ่มแผนงาน" เพื่อตั้งงานที่ทำซ้ำทุกเดือนหรือทุกปี
+          </div></td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="hint" style="margin-top:12px">
+  แผนแบบยึดวันตามปฏิทิน ระบบสร้างกิจกรรมล่วงหน้า 12 เดือนให้อัตโนมัติทุกวันตอนตี 0:05 ·
+  ส่วนแผนที่มีป้าย <span class="badge">↷ ตามงานจริง</span>
+  จะวางล่วงหน้าครั้งละ 1 รอบ และรอบใหม่โผล่เองเมื่อปิดงานรอบเดิม ·
+  การแก้แผนงานจะวางกิจกรรมอนาคตใหม่ตามกติกาที่แก้ แต่
+  <strong>ไม่แตะกิจกรรมที่กดเริ่มหรือกดจบไปแล้ว</strong>
+</div>
+{% endblock %}

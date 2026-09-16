@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block title %}ผู้ใช้งาน · RPF Calendar{% endblock %}
+{% block page_title %}ผู้ใช้งาน{% endblock %}
+
+{% block content %}
+<div x-data="{ addOpen: false, editOpen: false, pwOpen: false,
+               f: { id: '', username: '', display_name: '', role: 'viewer', active: true } }">
+
+<div class="card">
+  <div class="card-head">
+    <h2 class="card-title">บัญชีผู้ใช้</h2>
+    <span class="faint" style="font-size:12.5px">{{ rows | length }} บัญชี</span>
+    <div class="spacer"></div>
+    <button class="btn btn-primary btn-sm" x-on:click="addOpen = true">+ เพิ่มบัญชี</button>
+  </div>
+  <div class="card-body tight">
+    <div class="table-scroll">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>ชื่อผู้ใช้</th><th>ชื่อที่แสดง</th><th>สิทธิ์</th>
+            <th>ผูกกับผู้รับผิดชอบ</th><th>สถานะ</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for r in rows %}
+          <tr>
+            <td class="mono">{{ r.username }}{% if r.id == user.id %} <span class="badge">คุณ</span>{% endif %}</td>
+            <td>{{ r.display_name or '-' }}</td>
+            <td>{{ ROLE_LABELS[r.role].split('—')[0] }}</td>
+            <td>{{ r.staff_name or '-' }}</td>
+            <td>
+              {% if r.active %}<span class="badge st-done">ใช้งาน</span>
+              {% else %}<span class="badge">ปิดบัญชี</span>{% endif %}
+            </td>
+            <td class="row-actions">
+              <button class="btn btn-sm" x-on:click='f = {{ {
+                'id': r.id, 'username': r.username, 'display_name': r.display_name,
+                'role': r.role, 'active': r.active } | tojson }}; editOpen = true'>แก้ไข</button>
+              <button class="btn btn-sm" x-on:click='f = {{ {
+                'id': r.id, 'username': r.username } | tojson }}; pwOpen = true'>รหัสผ่าน</button>
+              {% if r.id != user.id %}
+              <form method="post" action="/settings/users/{{ r.id }}/delete" style="display:inline"
+                    onsubmit="return confirm('ลบบัญชี {{ r.username }}? ประวัติที่เขาเคยกดจะยังอยู่แต่ไม่มีชื่อกำกับ')">
+                <button class="btn btn-sm btn-danger" type="submit">ลบ</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2 class="card-title">ความหมายของแต่ละสิทธิ์</h2></div>
+  <div class="card-body">
+    <div style="display:grid; gap:8px">
+      {% for key, label in ROLE_LABELS.items() %}
+      <div><strong>{{ label.split('—')[0] }}</strong><span class="muted">— {{ label.split('—')[1] }}</span></div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+{# เพิ่มบัญชี #}
+<template x-if="addOpen">
+  <div>
+    <div class="modal-scrim" x-on:click="addOpen = false"></div>
+    <div class="modal modal-sm">
+      <form method="post" action="/settings/users/create">
+        <div class="modal-head"><h3>เพิ่มบัญชีผู้ใช้</h3></div>
+        <div class="modal-body">
+          <div class="field">
+            <label>ชื่อผู้ใช้ *</label>
+            <input name="username" required maxlength="40" autocomplete="off"
+                   placeholder="เช่น somchai">
+          </div>
+          <div class="field">
+            <label>ชื่อที่แสดง</label>
+            <input name="display_name" maxlength="80" placeholder="เช่น สมชาย">
+          </div>
+          <div class="field">
+            <label>สิทธิ์</label>
+            <select name="role">
+              {% for key, label in ROLE_LABELS.items() %}
+              <option value="{{ key }}" {{ 'selected' if key == 'worker' }}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label>รหัสผ่านเริ่มต้น *</label>
+            <input name="password" type="password" minlength="8" required autocomplete="new-password">
+            <div class="hint">อย่างน้อย 8 ตัวอักษร บอกให้เจ้าของบัญชีเปลี่ยนเองหลังเข้าครั้งแรก</div>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn" type="button" x-on:click="addOpen = false">ยกเลิก</button>
+          <button class="btn btn-primary" type="submit">สร้างบัญชี</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</template>
+
+{# แก้ไขบัญชี #}
+<template x-if="editOpen">
+  <div>
+    <div class="modal-scrim" x-on:click="editOpen = false"></div>
+    <div class="modal modal-sm">
+      <form method="post" :action="'/settings/users/' + f.id + '/update'">
+        <div class="modal-head"><h3>แก้ไขบัญชี <span x-text="f.username"></span></h3></div>
+        <div class="modal-body">
+          <div class="field">
+            <label>ชื่อที่แสดง</label>
+            <input name="display_name" x-model="f.display_name" maxlength="80">
+          </div>
+          <div class="field">
+            <label>สิทธิ์</label>
+            <select name="role" x-model="f.role">
+              {% for key, label in ROLE_LABELS.items() %}
+              <option value="{{ key }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <label class="check">
+            <input type="checkbox" name="active" value="1" x-model="f.active">
+            <span>เปิดใช้งานบัญชี</span>
+          </label>
+        </div>
+        <div class="modal-foot">
+          <button class="btn" type="button" x-on:click="editOpen = false">ยกเลิก</button>
+          <button class="btn btn-primary" type="submit">บันทึก</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</template>
+
+{# ตั้งรหัสผ่านใหม่ #}
+<template x-if="pwOpen">
+  <div>
+    <div class="modal-scrim" x-on:click="pwOpen = false"></div>
+    <div class="modal modal-sm">
+      <form method="post" :action="'/settings/users/' + f.id + '/password'">
+        <div class="modal-head"><h3>ตั้งรหัสผ่านใหม่ให้ <span x-text="f.username"></span></h3></div>
+        <div class="modal-body">
+          <div class="field">
+            <label>รหัสผ่านใหม่</label>
+            <input name="password" type="password" minlength="8" required autocomplete="new-password">
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn" type="button" x-on:click="pwOpen = false">ยกเลิก</button>
+          <button class="btn btn-primary" type="submit">ตั้งรหัสผ่าน</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</template>
+
+</div>
+{% endblock %}

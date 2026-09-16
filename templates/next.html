@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% set back = '/next?days=' ~ days ~ ('&mine=1' if mine else '') %}
+
+{% block title %}งานต่อไป · RPF Calendar{% endblock %}
+{% block page_title %}งานต่อไป{% endblock %}
+
+{% block topbar_extra %}
+<a class="btn btn-primary btn-sm" href="/activities/new">+ เพิ่มงาน</a>
+{{ m.filter_button(staff, categories, f, '/next', {'days': days}) }}
+{% endblock %}
+
+{% block content %}
+<div class="cal-bar">
+  <div class="cal-month" style="font-size:15px; min-width:0">{{ d_long(today_date) }}</div>
+  <div class="spacer"></div>
+  {% if has_staff %}
+  <a class="btn btn-sm {{ 'btn-primary' if not mine }}" href="/next?days={{ days }}">ทุกคน</a>
+  <a class="btn btn-sm {{ 'btn-primary' if mine }}" href="/next?days={{ days }}&mine=1">งานของฉัน</a>
+  {% endif %}
+</div>
+
+<div class="stat-row">
+  <div class="stat {{ 'danger' if groups.overdue }}">
+    <div class="stat-label">งานค้าง</div>
+    <div class="stat-value">{{ groups.overdue | length }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">กำลังทำ</div>
+    <div class="stat-value">{{ groups.running | length }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">วันนี้</div>
+    <div class="stat-value">{{ groups.planned | length }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">เสร็จวันนี้</div>
+    <div class="stat-value">{{ done_today }}</div>
+  </div>
+</div>
+
+{% if groups.overdue %}
+<section class="sec overdue">
+  <div class="sec-head">
+    <span class="sec-name">งานค้างจากวันก่อน</span>
+    <span class="sec-count">{{ groups.overdue | length }}</span>
+  </div>
+  <div class="sec-hint">
+    งานเหล่านี้เลยกำหนดแล้วยังไม่ได้กดเริ่ม จึงตามมาอยู่ในรายการนี้จนกว่าจะมีคนทำ —
+    วันที่วางแผนไว้เดิมในปฏิทินไม่ถูกเปลี่ยน
+  </div>
+  {{ m.activity_list(groups.overdue, user, back, show_date=True) }}
+</section>
+{% endif %}
+
+{% if groups.running %}
+<section class="sec">
+  <div class="sec-head">
+    <span class="sec-name">กำลังทำอยู่</span>
+    <span class="sec-count">{{ groups.running | length }}</span>
+  </div>
+  {{ m.activity_list(groups.running, user, back, show_date=True) }}
+</section>
+{% endif %}
+
+<section class="sec">
+  <div class="sec-head">
+    <span class="sec-name">วันนี้</span>
+    <span class="sec-count">{{ groups.planned | length }}</span>
+  </div>
+  {% if groups.planned %}
+    {{ m.activity_list(groups.planned, user, back) }}
+  {% else %}
+    <div class="card"><div class="empty">
+      {% if mine %}วันนี้ยังไม่มีงานที่มอบหมายให้คุณ{% else %}วันนี้ยังไม่มีแผนงาน{% endif %}
+    </div></div>
+  {% endif %}
+</section>
+
+<section class="sec">
+  <div class="sec-head">
+    <span class="sec-name">ที่จะถึง</span>
+    <span class="sec-count">{{ later_n }}</span>
+    <div class="spacer"></div>
+    {% for d, label in ranges %}
+    <a class="btn btn-sm {{ 'btn-primary' if days == d }}"
+       href="/next?days={{ d }}{{ '&mine=1' if mine }}">{{ label }}</a>
+    {% endfor %}
+  </div>
+
+  {% for g in ahead %}
+  <div class="agenda-day">
+    <div class="agenda-head">
+      <span class="agenda-title">{{ d_relative(g.date) }}</span>
+      <span class="agenda-date">{{ d_long(g.date) }}</span>
+      <span class="agenda-count">{{ g['items'] | length }} งาน</span>
+    </div>
+    {{ m.activity_list(g['items'], user, back) }}
+  </div>
+  {% else %}
+  <div class="card"><div class="empty">
+    ไม่มีงานที่วางแผนไว้ในอีก {{ days }} วันข้างหน้า
+  </div></div>
+  {% endfor %}
+</section>
+
+<a class="btn btn-primary fab" href="/activities/new" title="เพิ่มกิจกรรม">+</a>
+{% endblock %}

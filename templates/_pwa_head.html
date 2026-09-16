@@ -1,0 +1,40 @@
+{# ── ติดตั้งลงหน้าจอโฮมของมือถือได้ (PWA) ────────────────────────────
+   include ตัวนี้ต้องอยู่ใน <head> ของ **ทุกเทมเพลตที่เป็นหน้าเต็ม**
+   ตอนนี้คือ base.html กับ login.html
+
+   ทำไมต้องมีที่ login.html ด้วย
+     เบราว์เซอร์จะเสนอให้ติดตั้งก็ต่อเมื่อ "หน้าที่เปิดอยู่ตอนนั้น" ลิงก์ manifest ไว้
+     คนที่ยังไม่ได้ล็อกอินจะเห็นหน้า login เป็นหน้าแรก ถ้าหน้านี้ไม่มี manifest
+     ปุ่มติดตั้งจะไม่ขึ้นให้เลย — และหน้า login คือหน้าที่คนเปิดครั้งแรกเสมอ
+
+   iOS ไม่อ่าน manifest จึงต้องมีแท็ก apple-* แยกให้ครบ
+   ไม่งั้นบน iPhone จะได้ไอคอนเป็นภาพหน้าจอย่อ และเปิดแล้วยังมีแถบ Safari ติดมา
+
+   ติดตั้งได้เฉพาะเมื่อเข้าผ่าน HTTPS — ผ่าน http://192.168.1.3:8200 ในฟาร์ม
+   จะใช้งานได้ปกติทุกอย่าง แค่ไม่มีตัวเลือก "เพิ่มไปยังหน้าจอโฮม" #}
+{# crossorigin="use-credentials" ห้ามตัดทิ้งเด็ดขาด
+
+   ตามสเปก เบราว์เซอร์ดึง manifest แบบ "ไม่ส่งคุกกี้" เป็นค่าตั้งต้น แม้จะเป็น
+   โดเมนเดียวกันก็ตาม · ปกติไม่มีปัญหาเพราะ /static/ ของเราเปิดสาธารณะอยู่แล้ว
+
+   แต่พอมี Cloudflare Access คลุมโดเมนนี้ ทุกคำขอที่ไม่มีคุกกี้ CF_Authorization
+   จะถูกเด้งไปหน้าล็อกอินของ Cloudflare แทน · manifest จึงโหลดไม่สำเร็จ
+   แล้วปุ่ม "ติดตั้งแอป" จะหายไปเงียบ ๆ โดยไม่มี error ให้เห็นในหน้าเว็บ
+   หาสาเหตุยากมากเพราะหน้าเว็บทำงานปกติทุกอย่าง ขาดแค่ปุ่มติดตั้ง
+
+   ใส่ attribute นี้แล้ว manifest จะถูกดึงพร้อมคุกกี้ ผ่านด่าน Access ได้ตามปกติ #}
+<link rel="manifest" href="{{ asset('manifest.json') }}" crossorigin="use-credentials">
+<link rel="apple-touch-icon" href="{{ asset('icons/apple-touch-icon.png') }}">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="RPF Cal">
+<script>
+  // ต้องเป็น /sw.js ที่รากเท่านั้น ดูเหตุผลใน main.py:service_worker
+  // catch ไว้เงียบ ๆ เพราะบน http ธรรมดา (ใน LAN) เบราว์เซอร์ปฏิเสธเป็นปกติ
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('/sw.js').catch(function () {});
+    });
+  }
+</script>

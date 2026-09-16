@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+{% set editing = activity is not none %}
+
+{% block title %}{{ 'แก้ไขกิจกรรม' if editing else 'เพิ่มกิจกรรม' }} · RPF Calendar{% endblock %}
+{% block page_title %}{{ 'แก้ไขกิจกรรม' if editing else 'เพิ่มกิจกรรม' }}{% endblock %}
+
+{% block content %}
+<form method="post"
+      action="{{ '/activities/' ~ activity.id ~ '/edit' if editing else '/activities/new' }}"
+      x-data='{
+        allDay: {{ "true" if editing and activity.is_all_day else "false" }},
+        carry: {{ "false" if editing and not activity.carry_over else "true" }},
+
+        {# ค่าตั้งต้นรายประเภท มาจากทะเบียนประเภทกิจกรรม ไม่ได้ฝังชื่อไว้ในโค้ด #}
+        catNeeds: {{ cat_needs_start | tojson }},
+        needsStart: {{ "true" if not editing or activity.needs_start else "false" }},
+
+        {# ถ้าผู้ใช้ติ๊กเองแล้ว ห้ามให้การเปลี่ยนประเภททับค่าที่เขาตั้งใจเลือก
+           ตอนแก้ไขงานเดิมก็ถือว่าตั้งใจไว้แล้วเช่นกัน #}
+        touched: {{ "true" if editing else "false" }},
+
+        onCategory(id) {
+          if (this.touched) return;
+          this.needsStart = id === "" ? true : (this.catNeeds[id] !== false);
+        }
+      }'>
+<div class="card">
+  <div class="card-body">
+
+    <div class="field">
+      <label for="title">ชื่องาน *</label>
+      <input id="title" name="title" required maxlength="200" autofocus
+             value="{{ activity.title if editing }}"
+             placeholder="เช่น ทำวัคซีนนิวคาสเซิล เล้า A3">
+    </div>
+
+    <div class="form-grid">
+      <div class="field">
+        <label for="category_id">ประเภทกิจกรรม</label>
+        <select id="category_id" name="category_id" x-on:change="onCategory($event.target.value)">
+          <option value="">ไม่ระบุ</option>
+          {% for c in categories %}
+          <option value="{{ c.id }}"
+                  {{ 'selected' if editing and activity.category_id == c.id }}>{{ c.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="assignee_id">ผู้รับผิดชอบ</label>
+        {% if user.role in ('admin', 'manager') %}
+        <select id="assignee_id" name="assignee_id">
+          <option value="">ยังไม่ระบุ</option>
+          {% for s in staff %}
+          <option value="{{ s.id }}"
+                  {{ 'selected' if editing and activity.assignee_id == s.id }}>
+            {{ s.name }}{{ ' · ' ~ s.position if s.position }}
+          </option>
+          {% endfor %}
+        </select>
+        {% else %}
+        {# พนักงานมอบหมายงานให้คนอื่นไม่ได้ ระบบตั้งเป็นชื่อตัวเองให้เสมอ #}
+        <div style="padding:10px 0">{{ user.staff_name or 'บัญชีนี้ยังไม่ได้ผูกกับทะเบียนผู้รับผิดชอบ' }}</div>
+        {% endif %}
+      </div>
+
+      <div class="field">
+        <label for="priority">ความสำคัญ</label>
+        <select id="priority" name="priority">
+          {% for value, label in PRIORITY_LABELS.items() %}
+          <option value="{{ value }}"
+                  {{ 'selected' if (activity.priority if editing else 3) == value }}>
+            {{ value }} · {{ label }}
+          </option>
+          {% endfor %}
+        </select>
+        <div class="hint">ใช้จัดลำดับเมื่อมีงานหลายงานในวันเดียวกัน</div>
+      </div>
+    </div>
+
+    {% if user.role in ('admin', 'manager') and staff %}
+    {# ผู้ช่วยกดเริ่ม/สิ้นสุดงานนี้ได้เหมือนผู้รับผิดชอบหลัก และเห็นใน "งานของฉัน" #}
+    <div class="field" style="margin-top:14px; margin-bottom:0">
+      <label>ผู้ช่วย (เลือกได้หลายคน)</label>
+      <div class="chip-picker">
+        {% set chosen = activity.helper_ids if editing and activity.helper_ids else [] %}
+        {% for s in staff %}
+        <label class="chip-pick">
+          <input type="checkbox" name="helper_ids" value="{{ s.id }}"
+                 {{ 'checked' if s.id in chosen }}>
+          <span>{{ s.name }}</span>
+        </label>
+        {% endfor %}
+      </div>
+      <div class="hint">
+        คนที่เลือกไว้จะกดเริ่ม/สิ้นสุดงานนี้ได้ด้วย และเห็นงานนี้ใน "งานของฉัน"
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2 class="card-title">วันและเวลา</h2></div>
+  <div class="card-body">
+    <div class="form-grid">
+      <div class="field">
+        <label for="planned_date">วันที่เริ่ม *</label>
+        <input id="planned_date" name="planned_date" type="date" required
+               x-ref="startDate"
+               value="{{ (activity.planned_date if editing else default_date) }}"
+               x-on:change="if ($refs.endDate.value < $event.target.value)
+                              $refs.endDate.value = $event.target.value">
+      </div>
+      <div class="field">
+        <label for="planned_end_date">วันที่สิ้นสุด</label>
+        <input id="planned_end_date" name="planned_end_date" type="date"
+               x-ref="endDate"
+               value="{{ (activity.planned_end_date if editing else default_date) }}">
+        <div class="hint">
+          งานวันเดียวใส่วันเดียวกับวันเริ่ม · ถ้ากินหลายวันจะขึ้นเป็นแถบลากยาวในปฏิทิน
+        </div>
+      </div>
+    </div>
+
+    {% if editing and activity.source_system %}
+    <div class="alert info" style="margin:4px 0 0">
+      งานนี้ซิงค์มาจาก <strong>{{ SOURCE_LABELS.get(activity.source_system, activity.source_system) }}</strong>
+      — แก้วันที่ที่นี่ได้เลย ไม่ต้องไปแก้ที่โปรแกรมต้นทาง
+      <br>รอบซิงค์ถัดไปจะไม่เขียนทับวันที่แก้ และต้นทางจะดึงวันนี้กลับไปใช้เอง
+      <br>ส่วนชื่องานกับรายละเอียดยังให้ต้นทางเป็นเจ้าของ แก้ที่นี่แล้วรอบหน้าจะถูกเขียนทับ
+    </div>
+    {% endif %}
+
+    <label class="check" style="margin:6px 0 14px">
+      <input type="checkbox" name="is_all_day" value="1" x-model="allDay">
+      <span>งานทั้งวัน (ไม่ระบุเวลา)</span>
+    </label>
+
+    <div class="form-grid" x-show="!allDay" x-cloak>
+      <div class="field">
+        <label for="planned_start_time">เวลาเริ่ม</label>
+        <input id="planned_start_time" name="planned_start_time" type="time"
+               value="{{ t_hhmm(activity.planned_start_time) if editing }}">
+      </div>
+      <div class="field">
+        <label for="planned_end_time">เวลาเสร็จ</label>
+        <input id="planned_end_time" name="planned_end_time" type="time"
+               value="{{ t_hhmm(activity.planned_end_time) if editing }}">
+      </div>
+      <div class="field">
+        <label for="duration_min">หรือใช้เวลาประมาณ (นาที)</label>
+        <input id="duration_min" name="duration_min" type="number" min="1" max="1440"
+               value="{{ activity.duration_min if editing and activity.duration_min }}"
+               placeholder="เช่น 90">
+        <div class="hint">กรอกอย่างใดอย่างหนึ่ง ระบบเติมอีกช่องให้เอง</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2 class="card-title">รายละเอียดและงานค้าง</h2></div>
+  <div class="card-body">
+    <div class="field">
+      <label for="description">รายละเอียดเพิ่มเติม</label>
+      <textarea id="description" name="description" rows="3"
+                placeholder="ขั้นตอน อุปกรณ์ที่ต้องเตรียม หรือข้อควรระวัง">{{ activity.description if editing }}</textarea>
+    </div>
+
+    <label class="check">
+      <input type="checkbox" name="needs_start" value="1" x-model="needsStart"
+             x-on:change="touched = true">
+      <span>
+        กิจกรรมนี้ต้องมีคนกดเริ่มงาน
+        <div class="hint" style="margin-top:3px">
+          เอาเครื่องหมายออกถ้าเป็นแค่รายการแจ้งให้ทราบ เช่นพนักงานลาหยุด —
+          จะไม่มีปุ่มเริ่มงาน และไม่ไปกองอยู่ในงานค้าง แต่ยังขึ้นบนปฏิทินตามปกติ
+          <br>ค่าตั้งต้นมาจากประเภทกิจกรรมที่เลือก ตั้งได้ที่ทะเบียนประเภทกิจกรรม
+        </div>
+      </span>
+    </label>
+
+    <div x-show="needsStart" x-cloak>
+    <label class="check" style="margin-top:14px">
+      <input type="checkbox" name="carry_over" value="1" x-model="carry">
+      <span>
+        ถ้าไม่ได้กดเริ่มตามแผน ให้ตามมาเป็นงานค้างของวันถัดไป
+        <div class="hint" style="margin-top:3px">
+          วันที่วางแผนไว้เดิมยังอยู่ในปฏิทินเหมือนเดิม แค่มาโผล่ในหน้างานวันนี้เพิ่มด้วย
+        </div>
+      </span>
+    </label>
+
+    <div class="field" style="margin-top:14px; max-width:280px" x-show="carry" x-cloak>
+      <label for="auto_skip_after_days">ค้างเกินกี่วันให้ปิดเป็น "ไม่ได้ทำ"</label>
+      <input id="auto_skip_after_days" name="auto_skip_after_days" type="number" min="1" max="365"
+             value="{{ activity.auto_skip_after_days if editing and activity.auto_skip_after_days }}"
+             placeholder="เว้นว่าง = ตามจนกว่าจะทำ">
+      <div class="hint">
+        งานที่ทำถี่ๆ อย่างเก็บไข่ควรตั้งไว้ 1 วัน ไม่งั้นงานค้างจะกองสะสมจนหน้าจอรก
+      </div>
+    </div>
+    </div>{# /x-show needsStart — ไม่ต้องกดเริ่มก็ไม่มีเรื่องงานค้างให้ตั้ง #}
+  </div>
+</div>
+
+<div class="form-actions">
+  <button class="btn btn-primary" type="submit">
+    {{ 'บันทึกการแก้ไข' if editing else 'สร้างกิจกรรม' }}
+  </button>
+  <a class="btn" href="{{ '/activities/' ~ activity.id if editing else '/calendar' }}">ยกเลิก</a>
+</div>
+</form>
+{% endblock %}

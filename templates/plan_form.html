@@ -1,0 +1,306 @@
+{% extends "base.html" %}
+{% set editing = series is not none %}
+
+{% block title %}{{ 'แก้ไขแผนงาน' if editing else 'เพิ่มแผนงาน' }} · RPF Calendar{% endblock %}
+{% block page_title %}{{ 'แก้ไขแผนงานประจำ' if editing else 'เพิ่มแผนงานประจำ' }}{% endblock %}
+
+{% block content %}
+<form method="post"
+      action="{{ '/plans/' ~ series.id ~ '/edit' if editing else '/plans/new' }}"
+      x-data="{
+        freq: '{{ series.freq if editing else 'monthly_day' }}',
+        allDay: {{ 'true' if editing and series.is_all_day else 'false' }},
+        afterDone: {{ 'true' if editing and series.anchor_mode == 'after_done' else 'false' }},
+        carry: {{ 'false' if editing and not series.carry_over else 'true' }}
+      }">
+
+<div class="card">
+  <div class="card-body">
+    <div class="field">
+      <label for="title">ชื่องาน *</label>
+      <input id="title" name="title" required maxlength="200" autofocus
+             value="{{ series.title if editing }}"
+             placeholder="เช่น จดมิเตอร์ไฟทุกต้นเดือน">
+    </div>
+
+    <div class="form-grid">
+      <div class="field">
+        <label for="category_id">ประเภทกิจกรรม</label>
+        <select id="category_id" name="category_id">
+          <option value="">ไม่ระบุ</option>
+          {% for c in categories %}
+          <option value="{{ c.id }}"
+                  {{ 'selected' if editing and series.category_id == c.id }}>{{ c.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="assignee_id">ผู้รับผิดชอบ</label>
+        <select id="assignee_id" name="assignee_id">
+          <option value="">ยังไม่ระบุ</option>
+          {% for s in staff %}
+          <option value="{{ s.id }}"
+                  {{ 'selected' if editing and series.assignee_id == s.id }}>
+            {{ s.name }}{{ ' · ' ~ s.position if s.position }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="priority">ความสำคัญ</label>
+        <select id="priority" name="priority">
+          {% for value, label in PRIORITY_LABELS.items() %}
+          <option value="{{ value }}"
+                  {{ 'selected' if (series.priority if editing else 3) == value }}>
+            {{ value }} · {{ label }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    {% if staff %}
+    <div class="field" style="margin-top:14px; margin-bottom:0">
+      <label>ผู้ช่วยประจำแผนนี้ (เลือกได้หลายคน)</label>
+      <div class="chip-picker">
+        {% set chosen = series.helper_ids if editing and series.helper_ids else [] %}
+        {% for s in staff %}
+        <label class="chip-pick">
+          <input type="checkbox" name="helper_ids" value="{{ s.id }}"
+                 {{ 'checked' if s.id in chosen }}>
+          <span>{{ s.name }}</span>
+        </label>
+        {% endfor %}
+      </div>
+      <div class="hint">ระบบจะใส่ชื่อคนเหล่านี้ให้ทุกรอบที่สร้างขึ้นใหม่</div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{# ── กติกาการทำซ้ำ ── #}
+<div class="card">
+  <div class="card-head"><h2 class="card-title">ทำซ้ำเมื่อไร</h2></div>
+  <div class="card-body">
+    <div class="form-grid">
+      <div class="field">
+        <label for="freq">รูปแบบ</label>
+        <select id="freq" name="freq" x-model="freq">
+          {% for key in freq_order %}
+          <option value="{{ key }}">{{ freq_labels[key] }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="interval">ทุกๆ</label>
+        <input id="interval" name="interval" type="number" min="1" max="99"
+               value="{{ series.interval if editing else 1 }}">
+        <div class="hint">
+          <span x-show="freq === 'daily'">วัน</span>
+          <span x-show="freq === 'weekly'">สัปดาห์</span>
+          <span x-show="freq.startsWith('monthly')">เดือน — ใส่ 1 คือทุกเดือน, 3 คือทุกไตรมาส</span>
+          <span x-show="freq === 'yearly'">ปี</span>
+        </div>
+      </div>
+    </div>
+
+    {# รายเดือนตามวันที่ #}
+    <div class="field" x-show="freq === 'monthly_day'" x-cloak style="max-width:260px">
+      <label for="bymonthday">วันที่เท่าไรของเดือน</label>
+      <input id="bymonthday" name="bymonthday" type="number" min="1" max="31"
+             value="{{ series.bymonthday if editing and series.bymonthday else 1 }}">
+      <div class="hint">
+        ใส่ 31 = วันสุดท้ายของทุกเดือน — เดือนที่สั้นกว่าระบบจะใช้วันสุดท้ายของเดือนนั้นให้
+        (ก.พ. ได้ 28 หรือ 29) ไม่ข้ามเดือนทิ้ง
+      </div>
+    </div>
+
+    {# รายเดือนตามสัปดาห์ #}
+    <div class="form-grid" x-show="freq === 'monthly_nth'" x-cloak>
+      <div class="field">
+        <label for="nth_week">สัปดาห์ที่</label>
+        <select id="nth_week" name="nth_week">
+          {% for value, label in [(1,'แรก'),(2,'ที่ 2'),(3,'ที่ 3'),(4,'ที่ 4'),(-1,'สุดท้าย')] %}
+          <option value="{{ value }}"
+                  {{ 'selected' if editing and series.nth_week == value }}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="nth_weekday">วัน</label>
+        <select id="nth_weekday" name="nth_weekday">
+          {% for i in range(7) %}
+          <option value="{{ i }}"
+                  {{ 'selected' if editing and series.nth_weekday == i }}>
+            วัน{{ ['จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์','อาทิตย์'][i] }}
+          </option>
+          {% endfor %}
+        </select>
+        <div class="hint">เช่น "จันทร์ที่ 2 ของเดือน"</div>
+      </div>
+    </div>
+
+    {# รายปี #}
+    <div class="form-grid" x-show="freq === 'yearly'" x-cloak>
+      <div class="field">
+        <label for="byday">วันที่</label>
+        <input id="byday" name="byday" type="number" min="1" max="31"
+               value="{{ series.byday if editing and series.byday else 1 }}">
+      </div>
+      <div class="field">
+        <label for="bymonth">เดือน</label>
+        <select id="bymonth" name="bymonth">
+          {% for i in range(1, 13) %}
+          <option value="{{ i }}"
+                  {{ 'selected' if editing and series.bymonth == i }}>
+            {{ ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'][i-1] }}
+          </option>
+          {% endfor %}
+        </select>
+        <div class="hint">29 ก.พ. ในปีที่ไม่ใช่อธิกสุรทิน ระบบใช้ 28 ก.พ. ให้</div>
+      </div>
+    </div>
+
+    {# รายสัปดาห์ #}
+    <div class="field" x-show="freq === 'weekly'" x-cloak>
+      <label>วันในสัปดาห์</label>
+      <div class="weekday-row">
+        {% for i in range(7) %}
+        <label class="weekday">
+          <input type="checkbox" name="byweekday" value="{{ i }}"
+                 {{ 'checked' if editing and series.byweekday and i in series.byweekday }}>
+          <span>{{ ['จ','อ','พ','พฤ','ศ','ส','อา'][i] }}</span>
+        </label>
+        {% endfor %}
+      </div>
+      <div class="hint">
+        แผนรายสัปดาห์สร้างกิจกรรมเยอะมาก (52 ครั้งต่อปีต่อวันที่เลือก) —
+        ใช้เท่าที่จำเป็นเพื่อไม่ให้ปฏิทินล้น
+      </div>
+    </div>
+
+    {# เลือกวิธีนับรอบถัดไป — เป็นเรื่องที่คนใช้จริงถามบ่อยที่สุด
+       จึงวางไว้ต่อจากกติกาการซ้ำเลย ไม่ซ่อนไว้ท้ายฟอร์ม #}
+    <label class="check" style="margin:18px 0 0; padding:13px 14px;
+           border:1px solid var(--border); border-radius:var(--radius-sm)">
+      <input type="checkbox" name="anchor_after_done" value="1" x-model="afterDone">
+      <span>
+        <strong>นับรอบถัดไปจากวันที่ทำเสร็จจริง</strong>
+        <div class="hint" style="margin-top:4px">
+          ไม่ติ๊ก = ยึดวันตายตัวตามปฏิทิน · งานเสร็จช้าหรือเร็วไม่มีผลกับรอบถัดไป
+          <br>
+          ติ๊ก = รอบถัดไปเลื่อนตามงานจริง เหมาะกับงานที่ต้องเว้นระยะห่างจริง
+          เช่น ล้างถัง พ่นยา เปลี่ยนไส้กรอง
+        </div>
+      </span>
+    </label>
+
+    <div class="alert ok" x-show="afterDone" x-cloak style="margin-top:12px">
+      <strong>ตัวอย่าง:</strong> แผนวันที่ 15 ต.ค. ทุก 3 เดือน
+      แต่ทำเสร็จจริงวันที่ 30 ต.ค. → รอบถัดไปจะเป็น <strong>30 ม.ค.</strong> (ไม่ใช่ 15 ม.ค.)
+      <div style="margin-top:6px">
+        โหมดนี้ระบบจะวางกิจกรรมล่วงหน้าให้ <strong>ครั้งละ 1 รอบ</strong> เท่านั้น
+        เพราะวันของรอบถัดไปขึ้นกับว่ารอบนี้จะเสร็จเมื่อไร · รอบใหม่จะโผล่มาเองทันที
+        ที่ปิดงานรอบเดิม (ไม่ว่าจะกดเสร็จ ยกเลิก หรือปิดว่าไม่ได้ทำ)
+      </div>
+    </div>
+
+    <div class="form-grid" style="margin-top:14px">
+      <div class="field">
+        <label for="starts_on">{{ 'วันของรอบแรก' if editing else 'เริ่มวางแผนตั้งแต่' }} *</label>
+        <input id="starts_on" name="starts_on" type="date" required
+               value="{{ series.starts_on if editing else default_date }}">
+      </div>
+      <div class="field">
+        <label for="ends_on">วางแผนถึงวันที่</label>
+        <input id="ends_on" name="ends_on" type="date"
+               value="{{ series.ends_on if editing and series.ends_on }}">
+        <div class="hint">เว้นว่าง = ทำไปเรื่อยๆ ไม่มีวันจบ</div>
+      </div>
+      <div class="field">
+        <label for="max_count">หรือจำกัดจำนวนครั้ง</label>
+        <input id="max_count" name="max_count" type="number" min="1" max="500"
+               value="{{ series.max_count if editing and series.max_count }}">
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── เวลาของแต่ละครั้ง ── #}
+<div class="card">
+  <div class="card-head"><h2 class="card-title">เวลาของแต่ละครั้ง</h2></div>
+  <div class="card-body">
+    <label class="check" style="margin-bottom:14px">
+      <input type="checkbox" name="is_all_day" value="1" x-model="allDay">
+      <span>งานทั้งวัน (ไม่ระบุเวลา)</span>
+    </label>
+
+    <div class="form-grid">
+      <div class="field" x-show="!allDay" x-cloak>
+        <label for="start_time">เวลาเริ่ม</label>
+        <input id="start_time" name="start_time" type="time"
+               value="{{ t_hhmm(series.start_time) if editing }}">
+      </div>
+      <div class="field" x-show="!allDay" x-cloak>
+        <label for="duration_min">ใช้เวลาประมาณ (นาที)</label>
+        <input id="duration_min" name="duration_min" type="number" min="1" max="1440"
+               value="{{ series.duration_min if editing and series.duration_min }}">
+      </div>
+      <div class="field">
+        <label for="duration_days">กินเวลากี่วัน</label>
+        <input id="duration_days" name="duration_days" type="number" min="1" max="366"
+               value="{{ series.duration_days if editing else 1 }}">
+        <div class="hint">มากกว่า 1 จะขึ้นเป็นแถบลากยาวในปฏิทิน</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── รายละเอียดและงานค้าง ── #}
+<div class="card">
+  <div class="card-head"><h2 class="card-title">รายละเอียดและงานค้าง</h2></div>
+  <div class="card-body">
+    <div class="field">
+      <label for="description">รายละเอียดเพิ่มเติม</label>
+      <textarea id="description" name="description" rows="3"
+                placeholder="ขั้นตอน อุปกรณ์ที่ต้องเตรียม หรือข้อควรระวัง">{{ series.description if editing }}</textarea>
+    </div>
+
+    <label class="check">
+      <input type="checkbox" name="carry_over" value="1" x-model="carry">
+      <span>ถ้าไม่ได้กดเริ่มตามแผน ให้ตามมาเป็นงานค้างของวันถัดไป</span>
+    </label>
+
+    <div class="field" style="margin-top:14px; max-width:300px" x-show="carry" x-cloak>
+      <label for="auto_skip_after_days">ค้างเกินกี่วันให้ปิดเป็น "ไม่ได้ทำ"</label>
+      <input id="auto_skip_after_days" name="auto_skip_after_days" type="number" min="1" max="365"
+             value="{{ series.auto_skip_after_days if editing and series.auto_skip_after_days }}"
+             placeholder="เว้นว่าง = ตามจนกว่าจะทำ">
+      <div class="hint">
+        งานรายเดือนควรตั้งไว้สัก 7–14 วัน ไม่งั้นงานค้างของเดือนก่อนจะทับกับรอบใหม่
+      </div>
+    </div>
+
+    <label class="check" style="margin-top:16px">
+      <input type="checkbox" name="active" value="1"
+             {{ 'checked' if not editing or series.active }}>
+      <span>เปิดใช้แผนงานนี้ (ปิดแล้วกิจกรรมอนาคตที่ยังไม่ได้เริ่มจะถูกเอาออกจากปฏิทิน)</span>
+    </label>
+  </div>
+</div>
+
+{% if editing %}
+<div class="alert ok" style="margin-top:16px">
+  การบันทึกจะวางกิจกรรมในอนาคตใหม่ตามกติกาที่แก้ —
+  กิจกรรมที่กดเริ่ม กดจบ หรือบันทึกผลไปแล้วจะไม่ถูกแตะต้อง
+</div>
+{% endif %}
+
+<div class="form-actions">
+  <button class="btn btn-primary" type="submit">
+    {{ 'บันทึกแผนงาน' if editing else 'สร้างแผนงาน' }}
+  </button>
+  <a class="btn" href="/plans">ยกเลิก</a>
+</div>
+</form>
+{% endblock %}

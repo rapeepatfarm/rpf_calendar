@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+
+{% block title %}ปฏิทิน · RPF Calendar{% endblock %}
+{% block page_title %}ปฏิทิน{% endblock %}
+
+{% set qs %}{% if f.assignee_id %}&assignee_id={{ f.assignee_id }}{% endif %}{% if f.category_id %}&category_id={{ f.category_id }}{% endif %}{% if f.status %}&status={{ f.status }}{% endif %}{% endset %}
+
+{% block topbar_extra %}
+<a class="btn btn-primary btn-sm" href="/activities/new">+ เพิ่มงาน</a>
+{{ m.filter_button(staff, categories, f, '/calendar', {'y': month_date.year, 'm': month_date.month}) }}
+{% if can_manage %}
+{# กลับมาที่เดือนที่กำลังดูอยู่ ไม่ใช่เดือนปัจจุบัน ไม่งั้นกดซิงค์แล้วเด้งไปเดือนอื่น #}
+<form method="post" action="/settings/sync/run-all" style="display:inline">
+  <input type="hidden" name="back" value="/calendar?y={{ month_date.year }}&m={{ month_date.month }}">
+  <button class="btn btn-sm" title="ดึงแผนงานจากโปรแกรมอื่น เช่น RPF Farm">⇄ ซิงค์</button>
+</form>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="cal-layout"
+     x-data='calendarPage({
+       items: {{ items_json | tojson }},
+       next: {{ next_json | tojson }},
+       overdue: {{ overdue_json | tojson }},
+       selected: "{{ selected }}",
+       picked: {{ picked_id }},
+       today: "{{ today().isoformat() }}"
+     })'>
+
+  {# ── ปฏิทิน ── #}
+  <div class="cal-main">
+    <div class="cal-bar">
+      <a class="btn btn-sm" href="/calendar?y={{ prev_month.year }}&m={{ prev_month.month }}{{ qs }}"
+         aria-label="เดือนก่อน">‹</a>
+      <div class="cal-month">{{ d_month(month_date) }}</div>
+      <a class="btn btn-sm" href="/calendar?y={{ next_month.year }}&m={{ next_month.month }}{{ qs }}"
+         aria-label="เดือนถัดไป">›</a>
+      <a class="btn btn-sm" href="/calendar?{{ qs[1:] }}">วันนี้</a>
+    </div>
+
+    <div class="cal">
+      <div class="cal-head">
+        {% for wd in WEEKDAYS_SHORT %}
+        <div class="{{ 'wknd' if loop.index0 >= 5 }}">{{ wd }}</div>
+        {% endfor %}
+      </div>
+
+      {% for week in weeks %}
+      <div class="cal-week" style="--lanes: {{ week.lanes }}">
+        {# ชั้นล่าง: ช่องวัน (รับการคลิก) #}
+        <div class="cal-bg">
+          {% for day in week['days'] %}
+          <div class="cal-day{{ ' other' if not day.in_month }}{{ ' today' if day.is_today }}"
+               :class="{ 'sel': selDate === '{{ day.date }}' }"
+               x-on:click="pickDay('{{ day.date }}')"
+               role="button" tabindex="0"
+               x-on:keydown.enter="pickDay('{{ day.date }}')">
+            <span class="cal-num">{{ day.date.day }}</span>
+            {% if day.more %}<span class="cal-more">+{{ day.more }}</span>{% endif %}
+          </div>
+          {% endfor %}
+        </div>
+
+        {# ชั้นบน: แถบกิจกรรม — pointer-events ปิดไว้ที่ชั้น ให้เปิดเฉพาะตัวแถบ
+           ช่องว่างระหว่างแถบจึงยังกดเลือกวันได้ #}
+        <div class="cal-fg">
+          {% for bar in week['bars'] %}
+          {% set a = bar.item %}
+          <button type="button"
+                  class="cal-bar-item st-{{ a.status }}{{ ' late' if a.days_late }}{{ ' clip-l' if bar.clipped_left }}{{ ' clip-r' if bar.clipped_right }}"
+                  style="grid-column: {{ bar.col_start }} / span {{ bar.span }};
+                         grid-row: {{ bar.lane + 1 }};
+                         --bar-color: {{ a.category_color or '#8592a6' }}"
+                  :class="{ 'is-sel': pickedId === {{ a.id }}, 'is-dim': pickedId !== null && pickedId !== {{ a.id }} }"
+                  x-on:click.stop="pickActivity({{ a.id }}, '{{ a.planned_date }}')"
+                  title="{{ a.title }}">
+            {%- if a.planned_start_time and not a.is_all_day and not bar.clipped_left -%}
+            <span class="t">{{ t_hhmm(a.planned_start_time) }}</span>
+            {%- endif -%}
+            <span class="cal-bar-title">{{ a.title }}</span>
+          </button>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="hint cal-legend">
+      แถบสีคือประเภทกิจกรรม · แถบที่ลากยาวคือกิจกรรมหลายวัน · พื้นแดงคืองานที่เลยกำหนดแล้ว
+      ยังไม่ได้เริ่ม · แตะแถบกิจกรรมเพื่อดูรายละเอียดในกล่องด้านข้าง
+    </div>
+  </div>
+
+  {# ── แผงข้าง: งานต่อไป / งานค้าง / รายละเอียดกิจกรรมที่กดเลือก ──
+     ขวามือบนจอใหญ่ · ใต้ปฏิทินบนมือถือ (ดู .cal-layout ใน app.css) #}
+  <aside class="cal-panel">
+    <div class="panel-tabs" role="tablist">
+      <button type="button" class="panel-tab" role="tab"
+              :class="{ 'on': tab === 'next' }" x-on:click="showTab('next')">
+        งานต่อไป
+        <span class="panel-tab-n" x-show="nextItems.length" x-text="nextItems.length"></span>
+      </button>
+      <button type="button" class="panel-tab" role="tab"
+              :class="{ 'on': tab === 'overdue' }" x-on:click="showTab('overdue')">
+        งานค้าง
+        <span class="panel-tab-n late" x-show="overdueItems.length"
+              x-text="overdueItems.length"></span>
+      </button>
+    </div>
+
+    {# ── รายละเอียดกิจกรรมที่กดเลือกจากปฏิทิน ── #}
+    <template x-if="picked">
+      <div class="panel-body">
+        <button type="button" class="btn btn-sm" x-on:click="clearPick()">← กลับไปรายการ</button>
+        <div class="panel-item open" style="margin-top:10px">
+          <div class="panel-item-head" style="cursor:default">
+            <i class="swatch" :style="'background:' + picked.color"></i>
+            <span class="panel-item-title" x-text="picked.title"></span>
+            <span class="badge" :class="'st-' + picked.status" x-text="picked.status_label"></span>
+          </div>
+          <div class="panel-item-body">
+            {% include "_panel_detail.html" %}
+          </div>
+        </div>
+      </div>
+    </template>
+
+    {# ── รายการของแถบที่เลือกอยู่ ── #}
+    <template x-if="!picked">
+      <div class="panel-body">
+        <template x-if="listItems.length === 0">
+          <div class="empty" x-text="tab === 'overdue'
+                ? 'ไม่มีงานค้าง — ตามแผนครบทุกงาน'
+                : 'ยังไม่มีงานที่ต้องทำในช่วง {{ ahead_days }} วันข้างหน้า'"></div>
+        </template>
+
+        <template x-for="a in listItems" :key="a.id">
+          {# งานที่ปิดไปแล้วของวันนี้ยังอยู่ในลิสต์ (เหมือนหน้า "งานต่อไป")
+             แต่ขีดฆ่าไว้ให้เห็นชัดว่าไม่ต้องทำอะไรกับมันแล้ว #}
+          <button type="button" class="panel-row-item"
+                  :class="{ 'closed': a.closed }" x-on:click="pick(a.id)">
+            <i class="swatch" :style="'background:' + a.color"></i>
+            <span class="panel-row-main">
+              <span class="panel-row-title" x-text="a.title"></span>
+              <span class="panel-row-when" x-text="a.when + ' · ' + a.time"></span>
+            </span>
+            <span class="panel-row-tail">
+              <span class="badge late" x-show="a.days_late"
+                    x-text="'ค้าง ' + a.days_late + ' วัน'"></span>
+              <span class="badge" :class="'st-' + a.status" x-show="!a.days_late"
+                    x-text="a.status_label"></span>
+            </span>
+          </button>
+        </template>
+      </div>
+    </template>
+
+    {# ไม่มีปุ่มเพิ่มงานท้ายแผงแล้ว — ซ้ำกับปุ่ม "+ เพิ่มงาน" บนแถบบนซึ่งเห็นตลอด
+       และกินพื้นที่แผงที่ผู้ใช้อยากได้ไว้แสดงรายการ #}
+  </aside>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ asset('js/calendar.js') }}"></script>
+{% endblock %}

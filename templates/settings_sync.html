@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}ซิงค์จากโปรแกรมอื่น · RPF Calendar{% endblock %}
+{% block page_title %}ซิงค์จากโปรแกรมอื่น{% endblock %}
+
+{% block content %}
+
+<div class="card">
+  <div class="card-head">
+    <h2 class="card-title">แหล่งข้อมูล</h2>
+    <span class="faint" style="font-size:12.5px">{{ rows | length }} แหล่ง</span>
+  </div>
+  <div class="card-body tight">
+    {% if not rows %}
+      <p class="faint" style="padding:14px">ยังไม่ได้เปิดใช้แหล่งข้อมูลใด</p>
+    {% else %}
+    <div class="table-scroll">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>แหล่งข้อมูล</th>
+            <th>ลงในประเภท</th>
+            <th>ดึงย้อนหลัง</th>
+            <th>รอบล่าสุด</th>
+            <th>สถานะ</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for r in rows %}
+          <tr>
+            <td><strong>{{ r.name }}</strong><br><span class="faint" style="font-size:12px">{{ r.code }}</span></td>
+            <td>{{ r.category_name or '—' }}</td>
+            <td>{{ r.lookback_days }} วัน</td>
+            <td>
+              {% if r.last_run_at %}{{ ts(r.last_run_at) }}<br>
+                <span class="faint" style="font-size:12px">{{ r.last_status }}</span>
+              {% else %}<span class="faint">ยังไม่เคยดึง</span>{% endif %}
+            </td>
+            <td>
+              {% if r.enabled %}<span class="badge st-done">เปิด</span>
+              {% else %}<span class="badge">ปิด</span>{% endif %}
+            </td>
+            <td style="white-space:nowrap">
+              <form method="post" action="/settings/sync/{{ r.id }}/run" style="display:inline">
+                <button class="btn btn-primary btn-sm" {% if not r.enabled %}disabled{% endif %}>ดึงเดี๋ยวนี้</button>
+              </form>
+              <form method="post" action="/settings/sync/{{ r.id }}/toggle" style="display:inline">
+                <button class="btn btn-sm">{% if r.enabled %}ปิด{% else %}เปิด{% endif %}</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if available %}
+<div class="card" style="margin-top:18px">
+  <div class="card-head"><h2 class="card-title">แหล่งที่เปิดใช้ได้</h2></div>
+  <div class="card-body">
+    {% for a in available %}
+    <form method="post" action="/settings/sync/register/{{ a.code }}"
+          style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+      <div>
+        <strong>{{ a.name }}</strong><br>
+        <span class="faint" style="font-size:12px">{{ a.code }}</span>
+      </div>
+      <div>
+        <label class="faint" style="font-size:12px;display:block">ให้งานลงในประเภท</label>
+        <select name="category_id">
+          <option value="">— ไม่ระบุ —</option>
+          {% for c in categories %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <button class="btn btn-primary btn-sm">เปิดใช้</button>
+    </form>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<div class="card" style="margin-top:18px">
+  <div class="card-head"><h2 class="card-title">ประวัติการดึง</h2></div>
+  <div class="card-body tight">
+    <div class="table-scroll">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>เวลา</th><th>แหล่ง</th>
+            <th class="num">เพิ่ม</th><th class="num">แก้</th>
+            <th class="num">ยกเลิก</th><th class="num">เท่าเดิม</th>
+            <th>ผล</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for r in runs %}
+          <tr>
+            <td>{{ ts(r.started_at) }}</td>
+            <td>{{ r.source_code }}</td>
+            <td class="num">{{ r.created_n }}</td>
+            <td class="num">{{ r.updated_n }}</td>
+            <td class="num">{{ r.cancelled_n }}</td>
+            <td class="num">{{ r.skipped_n }}</td>
+            <td>
+              {% if r.ok %}<span class="badge st-done">สำเร็จ</span>
+              {% else %}<span class="badge st-late" title="{{ r.error }}">ผิดพลาด</span>{% endif %}
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="7" class="faint" style="text-align:center;padding:14px">ยังไม่มีประวัติ</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<p class="faint" style="font-size:12.5px;margin-top:16px">
+  ดึงซ้ำกี่รอบก็ปลอดภัย — ระบบผูกกิจกรรมด้วยรหัสของต้นทาง ไม่ใช่ชื่อ
+  รายการที่ไม่เปลี่ยนจะถูกนับเป็น "เท่าเดิม" และงานที่ถูกลบจากต้นทางจะถูกยกเลิกให้เอง
+  โดยไม่แตะผลงานที่คนกรอกไว้แล้ว
+</p>
+
+{% endblock %}

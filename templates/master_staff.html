@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}ผู้รับผิดชอบ · RPF Calendar{% endblock %}
+{% block page_title %}ผู้รับผิดชอบ{% endblock %}
+
+{% set blank = {'id': '', 'name': '', 'position': '', 'phone': '', 'color': '#2f7de1',
+                'user_id': '', 'sort_order': 0, 'active': True, 'note': ''} %}
+
+{% block content %}
+<div x-data='{ editing: false, f: {{ blank | tojson }} }'>
+
+<div class="card">
+  <div class="card-head">
+    <h2 class="card-title">ทะเบียนผู้รับผิดชอบ</h2>
+    <span class="faint" style="font-size:12.5px">{{ rows | length }} คน</span>
+    <div class="spacer"></div>
+    <button class="btn btn-primary btn-sm"
+            x-on:click='f = {{ blank | tojson }}; editing = true'>+ เพิ่มคน</button>
+  </div>
+  <div class="card-body tight">
+    <div class="table-scroll">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>ชื่อ</th>
+            <th>ตำแหน่ง</th>
+            <th>เบอร์โทร</th>
+            <th>บัญชีล็อกอิน</th>
+            <th class="num">งานค้าง</th>
+            <th>สถานะ</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for r in rows %}
+          <tr>
+            <td><i class="swatch" style="background:{{ r.color }}"></i> {{ r.name }}</td>
+            <td>{{ r.position or '-' }}</td>
+            <td class="mono">{{ r.phone or '-' }}</td>
+            <td>
+              {% if r.username %}{{ r.username }}
+              {% else %}<span class="faint">ไม่มีบัญชี</span>{% endif %}
+            </td>
+            <td class="num">{{ r.open_n }}</td>
+            <td>
+              {% if r.active %}<span class="badge st-done">ใช้งาน</span>
+              {% else %}<span class="badge">ปิดใช้งาน</span>{% endif %}
+            </td>
+            <td class="row-actions">
+              <button class="btn btn-sm" x-on:click='f = {{ {
+                'id': r.id, 'name': r.name, 'position': r.position, 'phone': r.phone,
+                'color': r.color, 'user_id': r.user_id or '', 'sort_order': r.sort_order,
+                'active': r.active, 'note': r.note } | tojson }}; editing = true'>แก้ไข</button>
+              <form method="post" action="/master/staff/{{ r.id }}/delete"
+                    style="display:inline"
+                    onsubmit="return confirm('ลบ {{ r.name }} ออกจากทะเบียน?')">
+                <button class="btn btn-sm btn-danger" type="submit">ลบ</button>
+              </form>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="7"><div class="empty">ยังไม่มีผู้รับผิดชอบในทะเบียน</div></td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="hint" style="margin-top:12px">
+  คนที่ไม่มีบัญชีล็อกอินยังถูกระบุเป็นผู้รับผิดชอบได้ตามปกติ
+  แต่ต้องให้หัวหน้ากดเริ่ม/สิ้นสุดงานแทน — ผูกบัญชีให้แล้วเขาจะกดเองจากมือถือได้
+</div>
+
+<template x-if="editing">
+  <div>
+    <div class="modal-scrim" x-on:click="editing = false"></div>
+    <div class="modal">
+      <form method="post" action="/master/staff/save">
+        <div class="modal-head">
+          <h3 x-text="f.id ? 'แก้ไขผู้รับผิดชอบ' : 'เพิ่มผู้รับผิดชอบ'"></h3>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" name="id" :value="f.id">
+          <div class="field">
+            <label>ชื่อ *</label>
+            <input name="name" x-model="f.name" required maxlength="80">
+          </div>
+          <div class="form-grid">
+            <div class="field">
+              <label>ตำแหน่ง</label>
+              <input name="position" x-model="f.position" maxlength="60"
+                     placeholder="เช่น หัวหน้าเล้า A">
+            </div>
+            <div class="field">
+              <label>เบอร์โทร</label>
+              <input name="phone" x-model="f.phone" maxlength="30">
+            </div>
+            <div class="field">
+              <label>สีประจำตัว</label>
+              <input name="color" type="color" x-model="f.color">
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="field">
+              <label>ผูกกับบัญชีล็อกอิน</label>
+              <select name="user_id" x-model="f.user_id">
+                <option value="">ไม่มีบัญชี</option>
+                {% for r in rows if r.user_id %}
+                <option value="{{ r.user_id }}">{{ r.username }} (ผูกกับ {{ r.name }})</option>
+                {% endfor %}
+                {% for u in free_users %}
+                <option value="{{ u.id }}">{{ u.username }}{{ ' · ' ~ u.display_name if u.display_name }}</option>
+                {% endfor %}
+              </select>
+              <div class="hint">ผูกแล้วเขาจะเห็น "งานของฉัน" และกดเริ่ม/จบเองได้</div>
+            </div>
+            <div class="field">
+              <label>ลำดับการแสดง</label>
+              <input name="sort_order" type="number" x-model="f.sort_order">
+            </div>
+          </div>
+          <div class="field">
+            <label>หมายเหตุ</label>
+            <input name="note" x-model="f.note" maxlength="200">
+          </div>
+          <label class="check">
+            <input type="checkbox" name="active" value="1" x-model="f.active">
+            <span>ยังทำงานอยู่ (ปิดแล้วจะไม่ขึ้นในตัวเลือกผู้รับผิดชอบ)</span>
+          </label>
+        </div>
+        <div class="modal-foot">
+          <button class="btn" type="button" x-on:click="editing = false">ยกเลิก</button>
+          <button class="btn btn-primary" type="submit">บันทึก</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</template>
+
+</div>
+{% endblock %}

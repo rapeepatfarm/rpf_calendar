@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff">
+  <title>{% block title %}RPF Calendar{% endblock %}</title>
+  <link rel="stylesheet" href="{{ asset('css/app.css') }}">
+
+  {% include '_pwa_head.html' %}
+
+  {% block head %}{% endblock %}
+</head>
+<body>
+{% set path = request.url.path %}
+{% set can_manage = user.role in ('admin', 'manager') %}
+
+{# startAsk เก็บงานที่กำลังถามยืนยันก่อนกดเริ่ม — ประกาศไว้ที่ชั้นนอกสุด
+   เพื่อให้ปุ่มเริ่มงานที่อยู่ลึกแค่ไหนก็เรียกได้ (Alpine ส่ง scope ลงไปให้ลูกทุกชั้น) #}
+<div class="layout" x-data="{ nav: false, startAsk: null, dateAsk: null }">
+
+  <aside class="sidebar" :class="{ open: nav }">
+    <div class="brand">
+      <div class="brand-name">RPF Calendar</div>
+      <div class="brand-sub">ปฏิทินวางแผนงานฟาร์ม</div>
+    </div>
+
+    <nav class="nav" x-on:click="nav = false">
+      {# เมนู "งานต่อไป" ถูกถอดออกตามที่ผู้ใช้สั่ง — กล่องข้างของปฏิทินมีทั้ง
+         งานต่อไปและงานค้างอยู่แล้ว · ป้ายจำนวนงานค้างย้ายมาไว้ที่เมนูปฏิทิน
+         ไม่งั้นจะไม่เหลือที่ไหนเตือนว่ามีงานค้างอยู่ #}
+      <a href="/calendar" class="{{ 'active' if path.startswith('/calendar') }}">
+        <span class="ico">▦</span> ปฏิทิน
+        {% if overdue_n %}<span class="pill">{{ overdue_n }}</span>{% endif %}
+      </a>
+      <a href="/history" class="{{ 'active' if path.startswith('/history') }}">
+        <span class="ico">▥</span> ประวัติและสรุป
+      </a>
+
+      {# viewer แก้อะไรไม่ได้ ซ่อนเมนูไปเลยดีกว่าให้กดแล้วเจอหน้าปฏิเสธ #}
+      {% if can_manage %}
+      <div class="nav-section">วางแผน</div>
+      <a href="/plans" class="{{ 'active' if path.startswith('/plans') }}">
+        <span class="ico">↻</span> แผนงานประจำ
+      </a>
+
+      <div class="nav-section">ข้อมูลหลัก</div>
+      <a href="/master/categories" class="{{ 'active' if path.startswith('/master/categories') }}">
+        <span class="ico">◈</span> ประเภทกิจกรรม
+      </a>
+      <a href="/master/staff" class="{{ 'active' if path.startswith('/master/staff') }}">
+        <span class="ico">◍</span> ผู้รับผิดชอบ
+      </a>
+
+      {# ต้องอยู่ในบล็อก can_manage ให้ตรงกับสิทธิ์ที่ /settings/sync บังคับจริง
+         ก่อนหน้านี้ไม่มีลิงก์นี้ในเมนูเลย คนใช้เดสก์ท็อปจึงเข้าหน้าซิงค์ไม่ได้
+         นอกจากพิมพ์ URL เอง (แถบ "ตั้งค่า" มีเฉพาะแถบล่างของมือถือ) #}
+      <a href="/settings/sync" class="{{ 'active' if path.startswith('/settings/sync') }}">
+        <span class="ico">⇄</span> ซิงค์จากโปรแกรมอื่น
+      </a>
+      {% endif %}
+
+      {% if user.role == 'admin' %}
+      <div class="nav-section">ระบบ</div>
+      <a href="/settings/users" class="{{ 'active' if path.startswith('/settings/users') }}">
+        <span class="ico">⚙</span> ผู้ใช้งาน
+      </a>
+      {% endif %}
+    </nav>
+
+    <div class="sidebar-foot">
+      <a href="/account" class="{{ 'active' if path.startswith('/account') }}"
+         style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap"
+         title="บัญชีของฉัน">{{ user.display_name or user.username }}</a>
+      <a href="/logout" class="muted">ออก</a>
+    </div>
+  </aside>
+
+  <div class="scrim" x-show="nav" x-on:click="nav = false" x-cloak></div>
+
+  <div class="main">
+    <header class="topbar">
+      <button class="menu-btn" x-on:click="nav = !nav" aria-label="เมนู">☰</button>
+      <h1>{% block page_title %}{% endblock %}</h1>
+      <div class="spacer"></div>
+      {% block topbar_extra %}{% endblock %}
+      <button class="btn btn-sm" title="สลับธีมสว่าง/มืด" x-on:click="
+        const r = document.documentElement;
+        const next = r.dataset.theme === 'dark' ? 'light' : 'dark';
+        r.dataset.theme = next; localStorage.setItem('theme', next);">◐</button>
+    </header>
+
+    <main class="content">
+      {% if request.query_params.get('ok') %}
+        <div class="alert ok">{{ request.query_params.get('ok') }}</div>
+      {% endif %}
+      {% if request.query_params.get('err') %}
+        <div class="alert">{{ request.query_params.get('err') }}</div>
+      {% endif %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+
+  {# แถบล่างสำหรับมือถือ — นิ้วโป้งเอื้อมถึงง่ายกว่าเมนูบนสุด
+     ปุ่มเพิ่มงานไม่อยู่ในนี้แล้ว เพราะมีปุ่ม "+ เพิ่มงาน" อยู่บนแถบบนทุกหน้าอยู่แล้ว #}
+  <nav class="tabbar">
+    <a href="/calendar" class="{{ 'active' if path.startswith('/calendar') }}">
+      <span class="ico">▦</span>ปฏิทิน
+      {% if overdue_n %}<span class="pill">{{ overdue_n }}</span>{% endif %}
+    </a>
+    {% if can_manage %}
+    <a href="/plans" class="{{ 'active' if path.startswith('/plans') }}">
+      <span class="ico">↻</span>งานประจำ
+    </a>
+    {% endif %}
+    <a href="/history" class="{{ 'active' if path.startswith('/history') }}">
+      <span class="ico">▥</span>รายงาน
+    </a>
+    <a href="/settings" class="{{ 'active' if path == '/settings' or path.startswith('/master') or path.startswith('/settings/') or path.startswith('/account') }}">
+      <span class="ico">⚙</span>ตั้งค่า
+    </a>
+  </nav>
+
+  {# ── กล่องแก้วันเริ่มงานย้อนหลัง ──────────────────────────
+     ใช้ตอนลงมือจริงไปแล้วแต่ลืมกดปุ่ม · ใช้ร่วมกันทุกหน้าเหมือน startAsk
+     เพื่อไม่ให้แต่ละหน้าประกอบฟอร์มเองแล้วลืมฟิลด์ #}
+  <template x-if="dateAsk">
+    <div>
+      <div class="modal-scrim" x-on:click="dateAsk = null"></div>
+      <div class="modal modal-sm">
+        <form method="post" :action="'/activities/' + dateAsk.id + '/start-date'">
+          <input type="hidden" name="next" :value="dateAsk.back">
+          <div class="modal-head"><h3>แก้วันที่เริ่มงานจริง</h3></div>
+          <div class="modal-body">
+            <div class="confirm-title" x-text="dateAsk.title"></div>
+            <div class="confirm-when" x-text="'บันทึกไว้ว่าเริ่ม: ' + dateAsk.started"></div>
+            <div class="field" style="margin-top:14px">
+              <label for="started_on">ลงมือทำจริงวันไหน</label>
+              <input id="started_on" name="started_on" type="date" required
+                     :value="dateAsk.date" :max="dateAsk.today">
+            </div>
+            <p class="hint" style="margin:10px 0 0">
+              เวลานาฬิกาที่บันทึกไว้จะคงเดิม เปลี่ยนเฉพาะวัน ·
+              วันในปฏิทินจะเลื่อนตามไปด้วย และเวลาที่ใช้จริงจะถูกคิดใหม่ตอนกดสิ้นสุด
+            </p>
+          </div>
+          <div class="modal-foot">
+            <button class="btn" type="button" x-on:click="dateAsk = null">ยกเลิก</button>
+            <button class="btn btn-go" type="submit">บันทึกวันใหม่</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </template>
+
+  {# ── กล่องยืนยันก่อนเริ่มงาน ──────────────────────────────
+     ใช้ร่วมกันทุกหน้า ปุ่มเริ่มงานที่ไหนก็เรียกกล่องนี้ตัวเดียวกัน
+     ข้อความต่างกันตามว่าวันนี้ถึงกำหนดหรือยัง #}
+  <template x-if="startAsk">
+    <div>
+      <div class="modal-scrim" x-on:click="startAsk = null"></div>
+      <div class="modal modal-sm">
+        <form method="post" :action="'/activities/' + startAsk.id + '/start'">
+          <input type="hidden" name="confirm" value="1">
+          <input type="hidden" name="next" :value="startAsk.back">
+          <div class="modal-head">
+            <h3 x-text="startAsk.state === 'early' ? 'ยังไม่ถึงกำหนดเริ่มงาน' : 'ยืนยันการเริ่มงาน'"></h3>
+          </div>
+          <div class="modal-body">
+            <div class="confirm-title" x-text="startAsk.title"></div>
+            <div class="confirm-when" x-text="'แผน: ' + startAsk.when"></div>
+
+            <template x-if="startAsk.state === 'early'">
+              <div class="alert" style="margin:14px 0 0">
+                งานนี้ยังไม่ถึงวันที่วางแผนไว้
+                <strong x-text="'(อีก ' + startAsk.days + ' วัน)'"></strong>
+                — ถ้าเริ่มตอนนี้ ระบบจะบันทึกไว้ในประวัติว่าเริ่มก่อนกำหนด
+                <div style="margin-top:6px">
+                  <strong>และจะเลื่อนวันในแผนมาเป็นวันนี้ให้</strong>
+                  <span x-show="startAsk.span > 1">(งาน <span x-text="startAsk.span"></span> วัน เลื่อนทั้งแผง)</span>
+                </div>
+                <div style="margin-top:6px">ยืนยันจะเริ่มเลยหรือไม่?</div>
+              </div>
+            </template>
+            <template x-if="startAsk.state === 'late'">
+              <div class="alert" style="margin:14px 0 0">
+                งานนี้เลยกำหนดมาแล้ว
+                <strong x-text="startAsk.days + ' วัน'"></strong>
+                — ระบบจะบันทึกว่าเริ่มช้ากว่าแผน
+                <div style="margin-top:6px">
+                  <strong>และจะเลื่อนวันในแผนมาเป็นวันนี้ให้</strong>
+                  <span x-show="startAsk.span > 1">(งาน <span x-text="startAsk.span"></span> วัน เลื่อนทั้งแผง)</span>
+                </div>
+                <div class="faint" style="margin-top:6px">
+                  วันที่วางไว้เดิมยังถูกเก็บไว้ รายงาน "% ทำตรงแผน" ยังเทียบกับแผนเดิม
+                </div>
+              </div>
+            </template>
+            <template x-if="startAsk.state === 'ontime'">
+              <p class="muted" style="margin:14px 0 0">
+                วันนี้เป็นวันที่ต้องเริ่มงานตามแผน · ระบบจะจดเวลาที่กดและชื่อคุณไว้
+              </p>
+            </template>
+          </div>
+          <div class="modal-foot">
+            <button class="btn" type="button" x-on:click="startAsk = null">ยังไม่เริ่ม</button>
+            <button class="btn btn-go" type="submit">ยืนยันเริ่มงาน</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </template>
+</div>
+
+<script>
+  // เรียกคืนธีมที่ผู้ใช้เลือกไว้ก่อน Alpine เริ่มทำงาน (ค่าตั้งต้นคือธีมสว่าง)
+  document.documentElement.dataset.theme = localStorage.getItem('theme') || 'light';
+</script>
+<!-- เก็บไว้ในเครื่อง ไม่ดึงจาก CDN เพื่อให้ใช้งานได้แม้อินเทอร์เน็ตฟาร์มหลุด -->
+<script defer src="{{ asset('js/vendor/alpine.min.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

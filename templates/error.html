@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block page_title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="card-body" style="text-align:center; padding:46px 22px">
+    <div style="font-size:40px; line-height:1">{{ icon }}</div>
+    <h2 style="margin:14px 0 8px; font-size:19px">{{ title }}</h2>
+    <p class="muted" style="margin:0 auto; max-width:430px">{{ message }}</p>
+    <a class="btn btn-primary" href="/calendar" style="margin-top:20px">กลับไปหน้าปฏิทิน</a>
+  </div>
+</div>
+{% endblock %}

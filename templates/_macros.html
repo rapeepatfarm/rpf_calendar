@@ -1,0 +1,187 @@
+{# ชิ้นส่วนที่ใช้ซ้ำหลายหน้า — แก้ที่นี่ที่เดียวแล้วเปลี่ยนทุกหน้าพร้อมกัน #}
+
+{# ข้อมูลที่กล่องยืนยันก่อนเริ่มงานต้องใช้ · tojson หนี ' ให้แล้ว
+   จึงต้องวางใน attribute ที่ครอบด้วย ' (ดูกฎข้อ 5 ใน CLAUDE.md) #}
+{%- macro date_payload(a, back) -%}
+{{ {'id': a.id, 'title': a.title, 'started': ts(a.started_at),
+    'date': d_local(a.started_at).isoformat() if a.started_at else '',
+    'today': today().isoformat(), 'back': back} | tojson }}
+{%- endmacro -%}
+
+{%- macro start_payload(a, back) -%}
+{{ {'id': a.id, 'title': a.title, 'state': a.start_state, 'days': a.start_days,
+    'when': d_span(a.planned_date, a.planned_end_date),
+    'span': a.span_days or 1, 'back': back} | tojson }}
+{%- endmacro -%}
+
+{% macro status_badge(a) %}
+  <span class="badge st-{{ a.status }}">{{ STATUS_LABELS[a.status] }}</span>
+  {%- if a.days_late %} <span class="badge late">ค้าง {{ a.days_late }} วัน</span>{% endif %}
+{%- endmacro %}
+
+{% macro priority_badge(a) %}
+  {%- if a.priority <= 2 %}
+  <span class="badge p{{ a.priority }}">{{ PRIORITY_LABELS[a.priority] }}</span>
+  {%- endif %}
+{%- endmacro %}
+
+
+{# การ์ดกิจกรรม 1 ใบ
+   show_date = แสดงวันที่ในบรรทัดรายละเอียดด้วย (ใช้ในหน้างานค้างและงานที่จะถึง)
+   back      = URL ที่จะกลับมาหลังกดปุ่ม เพื่อให้ผู้ใช้อยู่หน้าเดิม #}
+{% macro activity_card(a, user, back, show_date=False) %}
+<article class="act p{{ a.priority }}{{ ' closed' if a.status in ('done', 'cancelled', 'missed') }}">
+  <div class="act-main">
+    <div class="act-top">
+      <a class="act-title" href="/activities/{{ a.id }}">{{ a.title }}</a>
+      {{ priority_badge(a) }}
+      {{ status_badge(a) }}
+    </div>
+    <div class="act-meta">
+      {# งานหลายวันต้องเห็นช่วงเสมอ ไม่ใช่เฉพาะตอนที่หน้าขอให้แสดงวันที่
+         ไม่งั้นในหน้างานวันนี้จะดูเหมือนงานวันเดียวทั้งที่ยังมีอีกหลายวัน #}
+      {% if a.planned_end_date != a.planned_date %}
+      <span class="bit">🗓 {{ d_short(a.planned_date) }} – {{ d_short(a.planned_end_date) }}</span>
+      {% elif show_date %}
+      <span class="bit">🗓 {{ d_short(a.planned_date) }}</span>
+      {% endif %}
+      <span class="bit">🕐 {{ t_range(a.planned_start_time, a.planned_end_time, a.duration_min)
+                              if not a.is_all_day else 'ทั้งวัน' }}</span>
+      {% if a.category_name %}
+      <span class="bit"><i class="swatch" style="background:{{ a.category_color }}"></i>{{ a.category_name }}</span>
+      {% endif %}
+      <span class="bit">{{ '👤 ' ~ a.assignee_name if a.assignee_name else '👤 ยังไม่ระบุผู้รับผิดชอบ' }}</span>
+      {{ helper_names(a) }}
+      {% if a.status == 'in_progress' %}
+      <span class="bit" style="color:var(--accent)">เริ่มเมื่อ {{ ts(a.started_at) }}</span>
+      {% elif a.status == 'done' and a.actual_minutes is not none %}
+      <span class="bit">ใช้เวลา {{ dur(a.actual_minutes) }}</span>
+      {% endif %}
+    </div>
+    {% if a.result_note %}<div class="act-note">📝 {{ a.result_note }}</div>{% endif %}
+  </div>
+
+  <div class="act-actions">
+    {% if a.can_run %}
+      {% if a.status == 'planned' and a.needs_start %}
+      {# ไม่ submit ตรงๆ — เปิดกล่องยืนยันก่อนเสมอ กันกดพลาดบนมือถือ #}
+      <button class="btn btn-go btn-sm" type="button"
+              x-on:click='startAsk = {{ start_payload(a, back) }}'>เริ่มงาน</button>
+      {% elif a.status == 'in_progress' %}
+      <form method="post" action="/activities/{{ a.id }}/finish">
+        <input type="hidden" name="next" value="{{ back }}">
+        <button class="btn btn-stop btn-sm" type="submit">สิ้นสุด</button>
+      </form>
+      <form method="post" action="/activities/{{ a.id }}/unstart"
+            onsubmit="return confirm('ยกเลิกการเริ่มงาน?
+
+งานจะกลับไปเป็นแผนเหมือนยังไม่ได้กด{% if a.planned_date_original %} และวันในแผนจะกลับไปเป็น {{ d_short(a.planned_date_original) }} ตามเดิม{% endif %}')">
+        <input type="hidden" name="next" value="{{ back }}">
+        <button class="btn btn-sm" type="submit" title="กดเริ่มผิด">ยกเลิกการเริ่ม</button>
+      </form>
+      <button class="btn btn-sm" type="button" title="ลงมือจริงไปแล้วแต่เพิ่งมากดเริ่ม"
+              x-on:click='dateAsk = {{ date_payload(a, back) }}'>แก้วันเริ่ม</button>
+      {% endif %}
+    {% endif %}
+    <a class="btn btn-sm" href="/activities/{{ a.id }}">รายละเอียด</a>
+  </div>
+</article>
+{% endmacro %}
+
+
+{% macro activity_list(items, user, back, show_date=False) %}
+<div class="act-list">
+  {% for a in items %}{{ activity_card(a, user, back, show_date) }}{% endfor %}
+</div>
+{% endmacro %}
+
+
+{# ตัวกรองแบบไอคอนเดียวในแถบบน — เปิดเป็นแผงลอยเมื่อกด
+
+   เดิมเป็นแถบ select 3 ช่องวางเต็มความกว้าง ซึ่งกินพื้นที่แนวตั้งไปมาก
+   บนมือถือจนต้องเลื่อนจอเพื่อดูปฏิทิน · ยุบเป็นไอคอนเดียวทั้งบนจอเล็กและจอใหญ่
+   เพื่อให้โค้ดมีชุดเดียวและพฤติกรรมเหมือนกันทุกขนาดจอ #}
+{% macro filter_button(staff, categories, f, action, extra_fields={}, show_status=True) %}
+{% set active_n = (1 if f.assignee_id else 0) + (1 if f.category_id else 0) + (1 if (show_status and f.status) else 0) %}
+<div class="filter-wrap" x-data="{ open: false }" x-on:keydown.escape.window="open = false">
+  <button type="button" class="btn btn-sm{{ ' has-filter' if active_n }}"
+          x-on:click="open = !open" aria-label="ตัวกรอง" title="ตัวกรอง">
+    <span class="filter-ico">⛃</span>
+    {% if active_n %}<span class="filter-n">{{ active_n }}</span>{% endif %}
+  </button>
+
+  <div class="filter-pop" x-show="open" x-cloak
+       x-on:click.outside="open = false">
+    <form method="get" action="{{ action }}">
+      {% for key, value in extra_fields.items() %}
+      <input type="hidden" name="{{ key }}" value="{{ value }}">
+      {% endfor %}
+      <div class="field">
+        <label>ผู้รับผิดชอบ</label>
+        <select name="assignee_id">
+          <option value="">ทุกคน</option>
+          {% for s in staff %}
+          <option value="{{ s.id }}" {{ 'selected' if f.assignee_id == s.id }}>{{ s.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label>ประเภทกิจกรรม</label>
+        <select name="category_id">
+          <option value="">ทุกประเภท</option>
+          {% for c in categories %}
+          <option value="{{ c.id }}" {{ 'selected' if f.category_id == c.id }}>{{ c.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% if show_status %}
+      <div class="field">
+        <label>สถานะ</label>
+        <select name="status">
+          <option value="">ทุกสถานะ</option>
+          {% for key, label in STATUS_LABELS.items() %}
+          <option value="{{ key }}" {{ 'selected' if f.status == key }}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+      <div class="filter-foot">
+        {% if active_n %}
+        <a class="btn btn-sm" href="{{ action }}{% if extra_fields %}?{% for k, v in extra_fields.items() %}{{ k }}={{ v }}&{% endfor %}{% endif %}">ล้าง</a>
+        {% endif %}
+        <button class="btn btn-primary btn-sm" type="submit">ใช้ตัวกรอง</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endmacro %}
+
+
+{# แถบเปอร์เซ็นต์ทำตรงแผน — สีบอกระดับโดยไม่ต้องอ่านตัวเลข
+   เกณฑ์: 85%+ เขียว · 60–84% เหลือง · ต่ำกว่านั้นแดง
+
+   แสดงเศษ/ส่วนกำกับด้วย เพราะตัวหารไม่เท่ากับ "ทั้งหมด" ในตาราง
+   (งานที่ยกเลิกและงานที่ยังไม่ปิดไม่ถูกนับ) ถ้าไม่บอก จะดูเหมือนเลขผิด
+   เช่น ทั้งหมด 9 งานแต่ขึ้น 100% #}
+{% macro rate_bar(pct, done=None, judged=None) %}
+  {%- if pct is none -%}
+  <span class="faint" title="ยังไม่มีงานที่ถึงกำหนดในช่วงนี้">-</span>
+  {%- else -%}
+  <div class="rate" {% if judged %}title="{{ done }} จาก {{ judged }} งานที่ถึงกำหนดแล้ว"{% endif %}>
+    <div class="rate-track">
+      <span class="rate-fill {{ 'good' if pct >= 85 else ('mid' if pct >= 60 else 'bad') }}"
+            style="width: {{ pct }}%"></span>
+    </div>
+    <span class="rate-num">{{ pct }}%</span>
+    {%- if judged %}<span class="rate-of">{{ done }}/{{ judged }}</span>{% endif -%}
+  </div>
+  {%- endif -%}
+{% endmacro %}
+
+
+{# รายชื่อผู้ช่วย — แสดงเฉพาะเมื่อมี #}
+{% macro helper_names(a) %}
+  {%- if a.helper_names -%}
+  <span class="bit">👥 +{{ a.helper_names | join(', ') }}</span>
+  {%- endif -%}
+{% endmacro %}

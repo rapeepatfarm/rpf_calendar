@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.env
+.pytest_cache/
+cloudflared.log
+cloudflared.out
+
+# บันทึกรันไทม์ — ไม่ใช่ source, เก็บในเครื่องพอ
+logs/
+
+# session ของ Claude Code — เฉพาะเครื่องนี้
+.claude/
+
+# ไฟล์เรนเดอร์ชั่วคราวที่เคยใช้ทดสอบหน้าจอผ่านเบราว์เซอร์
+static/_preview*.html

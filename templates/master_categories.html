@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}ประเภทกิจกรรม · RPF Calendar{% endblock %}
+{% block page_title %}ประเภทกิจกรรม{% endblock %}
+
+{% set blank = {'id': '', 'name': '', 'color': '#2f7de1', 'icon': '',
+                'default_priority': 3, 'default_duration_min': '',
+                'sort_order': 0, 'active': True, 'needs_start': True} %}
+
+{% block content %}
+<div x-data='{ editing: false, f: {{ blank | tojson }} }'>
+
+<div class="card">
+  <div class="card-head">
+    <h2 class="card-title">ประเภทกิจกรรม</h2>
+    <span class="faint" style="font-size:12.5px">{{ rows | length }} ประเภท</span>
+    <div class="spacer"></div>
+    <button class="btn btn-primary btn-sm"
+            x-on:click='f = {{ blank | tojson }}; editing = true'>+ เพิ่มประเภท</button>
+  </div>
+  <div class="card-body tight">
+    <div class="table-scroll">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>ชื่อประเภท</th>
+            <th>ความสำคัญตั้งต้น</th>
+            <th>ระยะเวลาตั้งต้น</th>
+            <th>ต้องกดเริ่ม</th>
+            <th class="num">ใช้อยู่</th>
+            <th>สถานะ</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for r in rows %}
+          <tr>
+            <td>
+              <i class="swatch" style="background:{{ r.color }}"></i>
+              {{ r.icon }} {{ r.name }}
+            </td>
+            <td>{{ PRIORITY_LABELS[r.default_priority] }}</td>
+            <td>{{ dur(r.default_duration_min) or '-' }}</td>
+            <td>{% if r.needs_start %}ต้องกด
+                {% else %}<span class="faint">แจ้งให้ทราบ</span>{% endif %}</td>
+            <td class="num">{{ r.used_n }}</td>
+            <td>
+              {% if r.active %}<span class="badge st-done">ใช้งาน</span>
+              {% else %}<span class="badge">ปิดใช้งาน</span>{% endif %}
+            </td>
+            <td class="row-actions">
+              <button class="btn btn-sm" x-on:click='f = {{ {
+                'id': r.id, 'name': r.name, 'color': r.color, 'icon': r.icon,
+                'default_priority': r.default_priority,
+                'default_duration_min': r.default_duration_min or '',
+                'sort_order': r.sort_order, 'active': r.active,
+                'needs_start': r.needs_start } | tojson }}; editing = true'>แก้ไข</button>
+              <form method="post" action="/master/categories/{{ r.id }}/delete"
+                    style="display:inline"
+                    onsubmit="return confirm('ลบประเภท {{ r.name }}?')">
+                <button class="btn btn-sm btn-danger" type="submit">ลบ</button>
+              </form>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="7"><div class="empty">ยังไม่มีประเภทกิจกรรม</div></td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<template x-if="editing">
+  <div>
+    <div class="modal-scrim" x-on:click="editing = false"></div>
+    <div class="modal">
+      <form method="post" action="/master/categories/save">
+        <div class="modal-head">
+          <h3 x-text="f.id ? 'แก้ไขประเภทกิจกรรม' : 'เพิ่มประเภทกิจกรรม'"></h3>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" name="id" :value="f.id">
+          <div class="field">
+            <label>ชื่อประเภท *</label>
+            <input name="name" x-model="f.name" required maxlength="60"
+                   placeholder="เช่น ทำวัคซีน">
+          </div>
+          <div class="form-grid">
+            <div class="field">
+              <label>สี</label>
+              <input name="color" type="color" x-model="f.color">
+            </div>
+            <div class="field">
+              <label>ไอคอน (อีโมจิ)</label>
+              <input name="icon" x-model="f.icon" maxlength="4" placeholder="💉">
+            </div>
+            <div class="field">
+              <label>ลำดับการแสดง</label>
+              <input name="sort_order" type="number" x-model="f.sort_order">
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="field">
+              <label>ความสำคัญตั้งต้น</label>
+              <select name="default_priority" x-model.number="f.default_priority">
+                {% for value, label in PRIORITY_LABELS.items() %}
+                <option value="{{ value }}">{{ value }} · {{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="field">
+              <label>ระยะเวลาตั้งต้น (นาที)</label>
+              <input name="default_duration_min" type="number" min="1" max="1440"
+                     x-model="f.default_duration_min" placeholder="เว้นว่างได้">
+            </div>
+          </div>
+          <label class="check">
+            <input type="checkbox" name="needs_start" value="1" x-model="f.needs_start">
+            <span>
+              กิจกรรมประเภทนี้ต้องมีคนกดเริ่มงาน
+              <div class="hint" style="margin-top:3px">
+                เอาออกถ้าเป็นแค่รายการแจ้งให้ทราบ เช่นพนักงานลาหยุด ·
+                เป็นแค่ <b>ค่าตั้งต้น</b> ตอนกรอกงานใหม่ คนกรอกเปลี่ยนรายตัวได้เสมอ
+              </div>
+            </span>
+          </label>
+          <label class="check" style="margin-top:12px">
+            <input type="checkbox" name="active" value="1" x-model="f.active">
+            <span>เปิดใช้งาน (ปิดแล้วจะไม่ขึ้นในตัวเลือกตอนสร้างงานใหม่)</span>
+          </label>
+        </div>
+        <div class="modal-foot">
+          <button class="btn" type="button" x-on:click="editing = false">ยกเลิก</button>
+          <button class="btn btn-primary" type="submit">บันทึก</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</template>
+
+</div>
+{% endblock %}

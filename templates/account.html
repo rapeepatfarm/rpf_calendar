@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}บัญชีของฉัน · RPF Calendar{% endblock %}
+{% block page_title %}{{ 'ตั้งรหัสผ่านใหม่' if forced else 'บัญชีของฉัน' }}{% endblock %}
+
+{% block content %}
+{% if forced %}
+{# ถูกบังคับเปลี่ยนรหัส — บอกให้ชัดว่าทำไมและต้องทำอะไร ไม่งั้นผู้ใช้จะงงว่า
+   ทำไมกดเมนูอื่นแล้วเด้งกลับมาที่นี่ตลอด #}
+<div class="alert" style="margin-bottom:18px">
+  <strong>ต้องตั้งรหัสผ่านใหม่ก่อนใช้งาน</strong>
+  <div style="margin-top:6px">
+    รหัสผ่านปัจจุบันเป็นรหัสที่ผู้ดูแลระบบตั้งให้ · ระบบกำลังจะเปิดให้เข้าใช้งาน
+    จากนอกบริษัท จึงต้องให้ทุกคนตั้งรหัสของตัวเองก่อน
+    — เมนูอื่นจะยังใช้ไม่ได้จนกว่าจะตั้งเสร็จ
+  </div>
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-head">
+    <h2 class="card-title">{{ 'ตั้งรหัสผ่านของคุณ' if forced else 'เปลี่ยนรหัสผ่าน' }}</h2>
+  </div>
+  <div class="card-body">
+    <form method="post" action="/account/password" style="max-width:400px">
+      <div class="field">
+        <label for="current">รหัสผ่านเดิม{{ ' (ที่ผู้ดูแลระบบให้มา)' if forced }}</label>
+        <input id="current" name="current" type="password" autocomplete="current-password"
+               required {{ 'autofocus' if forced }}>
+      </div>
+      <div class="field">
+        <label for="new_password">รหัสผ่านใหม่</label>
+        <input id="new_password" name="new_password" type="password"
+               autocomplete="new-password" minlength="8" required>
+        <div class="hint">
+          อย่างน้อย 8 ตัวอักษร · อย่าใช้รหัสที่เดาง่ายอย่างเบอร์โทรหรือชื่อฟาร์ม
+        </div>
+      </div>
+      <div class="field">
+        <label for="confirm">พิมพ์รหัสผ่านใหม่อีกครั้ง</label>
+        <input id="confirm" name="confirm" type="password" autocomplete="new-password" required>
+      </div>
+      <button class="btn btn-primary" type="submit">
+        {{ 'ตั้งรหัสผ่านและเข้าใช้งาน' if forced else 'บันทึกรหัสผ่านใหม่' }}
+      </button>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2 class="card-title">ข้อมูลบัญชี</h2></div>
+  <div class="card-body">
+    <div class="form-grid">
+      <div><label>ชื่อผู้ใช้</label><div>{{ user.username }}</div></div>
+      <div><label>ชื่อที่แสดง</label><div>{{ user.display_name or '-' }}</div></div>
+      <div><label>สิทธิ์</label><div>{{ ROLE_LABELS[user.role].split('—')[0] }}</div></div>
+      <div>
+        <label>ผูกกับผู้รับผิดชอบ</label>
+        <div>{{ linked.name if linked else 'ยังไม่ได้ผูก' }}</div>
+      </div>
+    </div>
+    {% if not linked %}
+    <div class="hint" style="margin-top:12px">
+      บัญชีนี้ยังไม่ได้ผูกกับชื่อในทะเบียนผู้รับผิดชอบ จึงยังไม่มีงานที่นับว่าเป็น "งานของฉัน"
+      แจ้งผู้ดูแลระบบให้ผูกให้ที่หน้าผู้รับผิดชอบ
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

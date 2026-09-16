@@ -1,0 +1,75 @@
+{# รายละเอียดของกิจกรรมที่ถูกเลือกในแผงข้างของหน้าปฏิทิน
+
+   แยกไฟล์ไว้เพราะถูก include เข้าไปในบล็อก Alpine ที่อ้างตัวแปร `picked`
+   ข้อความวันที่/เวลา/ป้ายสถานะทั้งหมดจัดรูปมาจากเซิร์ฟเวอร์แล้ว (view.panel_data)
+   ที่นี่จึงไม่มีตรรกะวันที่ไทยซ้ำอีกชุด #}
+<div class="panel-row"><span>เมื่อไร</span><b x-text="picked.when"></b></div>
+<div class="panel-row"><span>เวลา</span><b x-text="picked.time"></b></div>
+<template x-if="picked.category">
+  <div class="panel-row"><span>ประเภท</span><b x-text="picked.category"></b></div>
+</template>
+<div class="panel-row">
+  <span>ผู้รับผิดชอบ</span>
+  <b x-text="picked.assignee || 'ยังไม่ระบุ'"></b>
+</div>
+<template x-if="picked.helpers">
+  <div class="panel-row"><span>ผู้ช่วย</span><b x-text="picked.helpers"></b></div>
+</template>
+<template x-if="picked.urgent">
+  <div class="panel-row"><span>ความสำคัญ</span><b x-text="picked.priority_label"></b></div>
+</template>
+<template x-if="!picked.needs_start">
+  <div class="panel-row"><span>ชนิด</span><b>แจ้งให้ทราบ (ไม่ต้องกดเริ่ม)</b></div>
+</template>
+<template x-if="picked.days_late">
+  <div class="panel-late" x-text="'เลยวันที่ต้องเริ่มมา ' + picked.days_late + ' วันแล้วยังไม่ได้เริ่ม'"></div>
+</template>
+<template x-if="picked.description">
+  <div class="panel-text" x-text="picked.description"></div>
+</template>
+<template x-if="picked.note">
+  <div class="panel-text">📝 <span x-text="picked.note"></span></div>
+</template>
+
+<div class="panel-actions">
+  <template x-if="picked.can_run && picked.status === 'planned' && picked.needs_start">
+    <button class="btn btn-go btn-sm" type="button"
+            x-on:click="startAsk = { id: picked.id, title: picked.title,
+                                     state: picked.start_state, days: picked.start_days,
+                                     when: picked.when, span: picked.span || 1,
+                                     back: backUrl }">
+      เริ่มงาน
+    </button>
+  </template>
+  <template x-if="picked.can_run && picked.status === 'in_progress'">
+    <form method="post" :action="'/activities/' + picked.id + '/finish'">
+      <input type="hidden" name="next" :value="backUrl">
+      <button class="btn btn-stop btn-sm" type="submit">สิ้นสุด</button>
+    </form>
+  </template>
+  <template x-if="picked.can_run && picked.status === 'in_progress'">
+    <form method="post" :action="'/activities/' + picked.id + '/unstart'"
+          x-on:submit="if (!confirm('ยกเลิกการเริ่มงาน? งานจะกลับไปเป็นแผนเหมือนยังไม่ได้กด')) $event.preventDefault()">
+      <input type="hidden" name="next" :value="backUrl">
+      <button class="btn btn-sm" type="submit">ยกเลิกการเริ่ม</button>
+    </form>
+  </template>
+  <template x-if="picked.can_run && picked.status === 'in_progress'">
+    <button class="btn btn-sm" type="button" title="ลงมือจริงไปแล้วแต่เพิ่งมากดเริ่ม"
+            x-on:click="dateAsk = { id: picked.id, title: picked.title,
+                                    started: picked.started, date: picked.started_on,
+                                    today: todayIso, back: backUrl }">แก้วันเริ่ม</button>
+  </template>
+  <a class="btn btn-sm" :href="'/activities/' + picked.id">เปิดหน้าเต็ม</a>
+  {# ลบได้เฉพาะหัวหน้างานขึ้นไป — เช็คซ้ำที่เซิร์ฟเวอร์อีกชั้นใน routers/activities.delete()
+     ซ่อนปุ่มอย่างเดียวไม่พอ เพราะยิง POST ตรงๆ ได้ #}
+  {% if can_manage %}
+  <form method="post" :action="'/activities/' + picked.id + '/delete'"
+        x-on:submit="if (!confirm('ลบ &quot;' + picked.title + '&quot; ออกจากปฏิทิน?
+
+ประวัติจะยังถูกเก็บไว้ในระบบ')) $event.preventDefault()">
+    <input type="hidden" name="next" :value="backUrl">
+    <button class="btn btn-sm btn-danger" type="submit">ลบ</button>
+  </form>
+  {% endif %}
+</div>

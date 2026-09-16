@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+
+{% block title %}ประวัติและสรุป · RPF Calendar{% endblock %}
+{% block page_title %}ประวัติและสรุป{% endblock %}
+
+{% set qs %}preset={{ preset }}{% if preset == 'custom' %}&start={{ start }}&end={{ end }}{% endif %}{% if f.assignee_id %}&assignee_id={{ f.assignee_id }}{% endif %}{% if f.category_id %}&category_id={{ f.category_id }}{% endif %}{% endset %}
+
+{% block topbar_extra %}
+<a class="btn btn-primary btn-sm" href="/history/export?{{ qs }}">⤓ ส่งออก Excel</a>
+{% endblock %}
+
+{% block content %}
+{# ── เลือกช่วงเวลา ── #}
+<div class="cal-bar" x-data="{ custom: {{ 'true' if preset == 'custom' else 'false' }} }">
+  {% for key, label in presets %}
+  <a class="btn btn-sm {{ 'btn-primary' if preset == key }}"
+     href="/history?preset={{ key }}{% if f.assignee_id %}&assignee_id={{ f.assignee_id }}{% endif %}{% if f.category_id %}&category_id={{ f.category_id }}{% endif %}">{{ label }}</a>
+  {% endfor %}
+  <button class="btn btn-sm {{ 'btn-primary' if preset == 'custom' }}"
+          x-on:click="custom = !custom">กำหนดเอง</button>
+
+  <form method="get" action="/history" class="range-form" x-show="custom" x-cloak>
+    <input type="hidden" name="preset" value="custom">
+    {% if f.assignee_id %}<input type="hidden" name="assignee_id" value="{{ f.assignee_id }}">{% endif %}
+    {% if f.category_id %}<input type="hidden" name="category_id" value="{{ f.category_id }}">{% endif %}
+    <input type="date" name="start" value="{{ start }}" aria-label="ตั้งแต่วันที่">
+    <span class="faint">ถึง</span>
+    <input type="date" name="end" value="{{ end }}" aria-label="ถึงวันที่">
+    <button class="btn btn-sm btn-primary" type="submit">ดู</button>
+  </form>
+
+  <div class="spacer"></div>
+  {{ m.filter_button(staff, categories, f, '/history', {'preset': preset}, show_status=False) }}
+</div>
+
+<div class="hint" style="margin:-4px 0 16px">
+  ช่วง <strong>{{ d_short(start) }} – {{ d_short(end) }}</strong> ({{ label }}) ·
+  นับจาก<strong>วันสุดท้ายที่วางแผนไว้</strong> คือ "งานที่ควรทำให้เสร็จในช่วงนี้ ทำได้แค่ไหน"
+</div>
+
+{# ── สรุปตัวเลข ── #}
+<div class="stat-row">
+  <div class="stat">
+    <div class="stat-label">% ทำตรงแผน</div>
+    <div class="stat-value">
+      {% if summary.on_time_pct is none %}<span class="faint">-</span>
+      {% else %}{{ summary.on_time_pct }}%{% endif %}
+    </div>
+    <div class="hint">จาก {{ summary.judged }} งานที่ถึงกำหนดแล้ว</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">เสร็จตรงแผน</div>
+    <div class="stat-value" style="color:var(--ok)">{{ summary.on_time }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">เสร็จช้ากว่าแผน</div>
+    <div class="stat-value" style="color:var(--warn)">{{ summary.late }}</div>
+    {% if summary.late %}<div class="hint">ช้าเฉลี่ย {{ summary.avg_late_days }} วัน</div>{% endif %}
+  </div>
+  <div class="stat {{ 'danger' if summary.missed }}">
+    <div class="stat-label">ไม่ได้ทำ</div>
+    <div class="stat-value">{{ summary.missed }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">ยกเลิก</div>
+    <div class="stat-value">{{ summary.cancelled }}</div>
+    <div class="hint">ไม่นับใน %</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">ยังไม่ปิด</div>
+    <div class="stat-value">{{ summary.still_open }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">เวลาที่ใช้จริง</div>
+    <div class="stat-value">{{ (summary.minutes / 60) | round(1) }}<span style="font-size:14px"> ชม.</span></div>
+  </div>
+</div>
+
+{# ── รายคน ── #}
+<div class="card">
+  <div class="card-head"><h2 class="card-title">ภาระงานรายคน</h2></div>
+  <div class="card-body tight">
+    <div class="table-scroll">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>ผู้รับผิดชอบ</th><th class="num">ทั้งหมด</th><th class="num">ตรงแผน</th>
+            <th class="num">ช้า</th><th class="num">ไม่ได้ทำ</th><th class="num">ยังไม่ปิด</th>
+            <th style="min-width:180px">% ทำตรงแผน</th><th class="num">ชั่วโมง</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for p in people %}
+          <tr>
+            <td><i class="swatch" style="background:{{ p.color }}"></i> {{ p.name }}
+              {% if p.position %}<span class="faint" style="font-size:12px"> · {{ p.position }}</span>{% endif %}
+            </td>
+            <td class="num">{{ p.total }}</td>
+            <td class="num">{{ p.on_time }}</td>
+            <td class="num">{{ p.late or '' }}</td>
+            <td class="num">{{ p.missed or '' }}</td>
+            <td class="num">{{ p.still_open or '' }}</td>
+            <td>{{ m.rate_bar(p.on_time_pct, p.on_time, p.judged) }}</td>
+            <td class="num">{{ (p.minutes / 60) | round(1) if p.minutes else '' }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="8"><div class="empty">ยังไม่มีผู้รับผิดชอบในทะเบียน</div></td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{# ── รายประเภท ── #}
+{% if cats %}
+<div class="card">
+  <div class="card-head"><h2 class="card-title">แยกตามประเภทกิจกรรม</h2></div>
+  <div class="card-body tight">
+    <div class="table-scroll">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>ประเภท</th><th class="num">ทั้งหมด</th><th class="num">ตรงแผน</th>
+            <th class="num">ช้า</th><th class="num">ไม่ได้ทำ</th>
+            <th style="min-width:180px">% ทำตรงแผน</th><th class="num">ชั่วโมง</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for c in cats %}
+          <tr>
+            <td><i class="swatch" style="background:{{ c.color }}"></i> {{ c.name }}</td>
+            <td class="num">{{ c.total }}</td>
+            <td class="num">{{ c.on_time }}</td>
+            <td class="num">{{ c.late or '' }}</td>
+            <td class="num">{{ c.missed or '' }}</td>
+            <td>{{ m.rate_bar(c.on_time_pct, c.on_time, c.judged) }}</td>
+            <td class="num">{{ (c.minutes / 60) | round(1) if c.minutes else '' }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ── รายการทั้งหมด ── #}
+<div class="card">
+  <div class="card-head">
+    <h2 class="card-title">รายการกิจกรรมในช่วงนี้</h2>
+    <span class="faint" style="font-size:12.5px">{{ rows | length }} รายการ</span>
+  </div>
+  <div class="card-body tight">
+    <div class="table-scroll">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>วันที่วางแผน</th><th>ชื่องาน</th><th>ประเภท</th><th>ผู้รับผิดชอบ</th>
+            <th>ผลลัพธ์</th><th>ทำเสร็จเมื่อ</th><th class="num">เวลาที่ใช้</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for r in rows %}
+          <tr>
+            <td style="white-space:nowrap">
+              {{ d_short(r.planned_date) }}{% if r.planned_end_date != r.planned_date %}
+              <span class="faint">– {{ d_short(r.planned_end_date) }}</span>{% endif %}
+            </td>
+            <td><a href="/activities/{{ r.id }}">{{ r.title }}</a></td>
+            <td>
+              {% if r.category_name %}
+              <i class="swatch" style="background:{{ r.category_color }}"></i> {{ r.category_name }}
+              {% endif %}
+            </td>
+            <td>{{ r.assignee_name or '-' }}</td>
+            <td><span class="badge oc-{{ r.outcome }}">{{ OUTCOME_LABELS.get(r.outcome, r.outcome) }}</span>
+              {%- if r.late_days %} <span class="faint" style="font-size:12px">+{{ r.late_days }} วัน</span>{% endif %}
+            </td>
+            <td style="white-space:nowrap">{{ d_short(r.done_on) if r.done_on else '-' }}</td>
+            <td class="num">{{ dur(r.actual_minutes) if r.actual_minutes is not none else '-' }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="7"><div class="empty">ไม่มีกิจกรรมในช่วงเวลานี้</div></td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% if capped %}
+<div class="hint" style="margin-top:10px">
+  แสดงบนหน้าจอสูงสุด 500 รายการ — กด "ส่งออก Excel" เพื่อดูครบทุกรายการ
+</div>
+{% endif %}
+{% endblock %}

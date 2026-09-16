@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}ตั้งค่า · RPF Calendar{% endblock %}
+{% block page_title %}ตั้งค่า{% endblock %}
+
+{% block content %}
+{# หน้ารวมทางเข้าการตั้งค่า — มีไว้เพราะแถบล่างบนมือถือมีปุ่มเดียวสำหรับเรื่องนี้
+   บนจอใหญ่เข้าถึงได้จาก sidebar โดยตรงอยู่แล้ว แต่มีหน้านี้ไว้ก็ไม่เสียหาย
+
+   ไม่ใส่ "แผนงานประจำ" ที่นี่ — มีปุ่ม "งานประจำ" อยู่ในแถบล่างของมือถือแล้ว
+   และบนจอใหญ่ก็อยู่ใน sidebar · ใส่ซ้ำทำให้ผู้ใช้สับสนว่าเป็นคนละอย่างกัน #}
+
+{% if user.role in ('admin', 'manager') %}
+<div class="sec-head" style="margin-bottom:11px">
+  <span class="sec-name">ข้อมูลหลัก</span>
+</div>
+<div class="link-grid">
+  <a class="link-card" href="/master/categories">
+    <span class="link-ico">◈</span>
+    <span class="link-text">
+      <strong>ประเภทกิจกรรม</strong>
+      <span>สี ไอคอน ความสำคัญและระยะเวลาตั้งต้นของงานแต่ละประเภท</span>
+    </span>
+  </a>
+  <a class="link-card" href="/master/staff">
+    <span class="link-ico">◍</span>
+    <span class="link-text">
+      <strong>ผู้รับผิดชอบ</strong>
+      <span>ทะเบียนคนที่รับงานได้ · ผูกกับบัญชีล็อกอินได้</span>
+    </span>
+  </a>
+  <a class="link-card" href="/settings/sync">
+    <span class="link-ico">⇄</span>
+    <span class="link-text">
+      <strong>ซิงค์จากโปรแกรมอื่น</strong>
+      <span>ดึงแผนวัคซีนจาก RPF Farm เข้าปฏิทิน · ดูประวัติการดึง</span>
+    </span>
+  </a>
+</div>
+{% endif %}
+
+{% if user.role == 'admin' %}
+<div class="sec-head" style="margin:22px 0 11px">
+  <span class="sec-name">ระบบ</span>
+</div>
+<div class="link-grid">
+  <a class="link-card" href="/settings/users">
+    <span class="link-ico">⚙</span>
+    <span class="link-text">
+      <strong>ผู้ใช้งาน</strong>
+      <span>เพิ่ม/แก้บัญชี ตั้งสิทธิ์ และตั้งรหัสผ่านใหม่</span>
+    </span>
+  </a>
+</div>
+{% endif %}
+
+<div class="sec-head" style="margin:22px 0 11px">
+  <span class="sec-name">บัญชีของฉัน</span>
+</div>
+<div class="link-grid">
+  <a class="link-card" href="/account">
+    <span class="link-ico">◐</span>
+    <span class="link-text">
+      <strong>{{ user.display_name or user.username }}</strong>
+      <span>
+        {{ ROLE_LABELS[user.role].split('—')[0].strip() }}
+        {%- if user.staff_name %} · ผูกกับ {{ user.staff_name }}{% endif %} · เปลี่ยนรหัสผ่าน
+      </span>
+    </span>
+  </a>
+  <a class="link-card danger" href="/logout">
+    <span class="link-ico">⏻</span>
+    <span class="link-text">
+      <strong>ออกจากระบบ</strong>
+      <span>ต้องล็อกอินใหม่เมื่อกลับเข้ามา</span>
+    </span>
+  </a>
+</div>
+
+{% if user.role not in ('admin', 'manager') %}
+<div class="hint" style="margin-top:16px">
+  การตั้งค่าประเภทกิจกรรม ผู้รับผิดชอบ และแผนงานประจำ เป็นสิทธิ์ของหัวหน้างานขึ้นไป
+</div>
+{% endif %}
+{% endblock %}

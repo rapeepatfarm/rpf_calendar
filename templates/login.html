@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>เข้าสู่ระบบ · RPF Calendar</title>
+  {# ต่อ ?v= ตามกติกาข้อ 12f — ของเดิมเขียน /static/css/app.css ตรง ๆ
+     หน้านี้จึงติดแคช CSS เก่าไว้ทั้งที่หน้าอื่นได้ของใหม่ไปแล้ว #}
+  <link rel="stylesheet" href="{{ asset('css/app.css') }}">
+  {% include '_pwa_head.html' %}
+</head>
+<body>
+<div class="login-wrap">
+  <div class="card login-card">
+    <div class="card-body">
+      <h1 class="login-title">RPF Calendar</h1>
+      <div class="login-sub">ปฏิทินวางแผนงานฟาร์ม</div>
+
+      {% if error %}<div class="alert">{{ error }}</div>{% endif %}
+
+      <form method="post" action="/login">
+        <div class="field">
+          <label for="username">ชื่อผู้ใช้</label>
+          <input id="username" name="username" autocomplete="username" autofocus required>
+        </div>
+        <div class="field">
+          <label for="password">รหัสผ่าน</label>
+          <input id="password" name="password" type="password"
+                 autocomplete="current-password" required>
+        </div>
+        <button class="btn btn-primary btn-block" type="submit">เข้าสู่ระบบ</button>
+      </form>
+    </div>
+  </div>
+</div>
+<script>
+  document.documentElement.dataset.theme = localStorage.getItem('theme') || 'light';
+</script>
+</body>
+</html>

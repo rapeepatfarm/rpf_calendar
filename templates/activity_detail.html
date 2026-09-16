@@ -1,0 +1,356 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+
+{% block title %}{{ a.title }} · RPF Calendar{% endblock %}
+{% block page_title %}รายละเอียดกิจกรรม{% endblock %}
+
+{% block topbar_extra %}
+<a class="btn btn-sm" href="{{ back_url }}">← {{ back_label }}</a>
+{% endblock %}
+
+{% block content %}
+<div x-data="{ cancelOpen: false, missOpen: false, shiftOpen: {{ 'true' if shift else 'false' }} }">
+
+{# ── ยืนยันชั้นที่สอง: เลื่อนรอบถัดไปของแผนประจำออกไป ──────────
+   โผล่เฉพาะตอนที่เพิ่งกดเริ่มงานแล้ววันที่จะเลื่อนไปชนรอบอื่นของแผนเดียวกัน #}
+{% if shift %}
+<template x-if="shiftOpen">
+  <div>
+    <div class="modal-scrim" x-on:click="shiftOpen = false"></div>
+    <div class="modal">
+      <form method="post" action="/activities/{{ a.id }}/shift-plan">
+        <div class="modal-head"><h3>เลื่อนรอบถัดไปของแผนงานประจำ</h3></div>
+        <div class="modal-body">
+          <div class="confirm-title">{{ a.title }}</div>
+
+          {% if shift.blocked %}
+          <div class="alert" style="margin:14px 0 0">
+            เลื่อนวันให้ไม่ได้ — {{ shift.blocked }}
+            <div style="margin-top:6px">
+              งานนี้เริ่มไปแล้วตามปกติ แต่วันที่ในปฏิทินจะยังเป็นวันเดิม
+            </div>
+          </div>
+          {% else %}
+          <p class="muted" style="margin:14px 0 0">
+            วันนี้ ({{ d_short(today()) }}) มีงานรอบอื่นของแผนประจำนี้อยู่แล้ว
+            ถ้าจะเลื่อนงานที่เพิ่งเริ่มมาลงวันนี้ ต้องเลื่อนรอบถัดไปออกไปตามคาบของแผน
+          </p>
+          {% if shift.period %}
+          <p class="faint" style="margin:6px 0 0">คาบของแผน: {{ shift.period }}</p>
+          {% endif %}
+
+          <table class="tbl" style="margin-top:12px">
+            <thead><tr><th>รอบ</th><th>เดิม</th><th>ใหม่</th></tr></thead>
+            <tbody>
+              {% for mv in shift.moves %}
+              <tr>
+                <td>{{ mv.title }}</td>
+                {# งานวันเดียวใช้แบบสั้น ไม่งั้นตารางในกล่องจะกว้างเกินจอมือถือ #}
+                <td>{{ d_short(mv['from']) if mv['from'] == mv.from_end else d_span(mv['from'], mv.from_end) }}</td>
+                <td><strong>{{ d_short(mv.to) if mv.to == mv.to_end else d_span(mv.to, mv.to_end) }}</strong></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          <p class="faint" style="margin:10px 0 0">
+            ถ้าไม่ยืนยัน งานที่เพิ่งเริ่มจะยังทำต่อได้ตามปกติ
+            แต่วันที่ในปฏิทินจะคงเป็นวันเดิม ไม่เลื่อนมาวันนี้
+          </p>
+          {% endif %}
+        </div>
+        <div class="modal-foot">
+          <button class="btn" type="button" x-on:click="shiftOpen = false">ไม่เลื่อน</button>
+          {% if not shift.blocked %}
+          <button class="btn btn-go" type="submit">ยืนยันเลื่อนรอบถัดไป</button>
+          {% endif %}
+        </div>
+      </form>
+    </div>
+  </div>
+</template>
+{% endif %}
+
+<div class="card">
+  <div class="card-body">
+    <div class="act-top" style="margin-bottom:10px">
+      <h2 style="margin:0; font-size:19px; font-weight:650; flex:1">{{ a.title }}</h2>
+      {{ m.priority_badge(a) }}
+      {{ m.status_badge(a) }}
+    </div>
+
+    <div class="form-grid" style="gap:12px 18px">
+      <div>
+        <label>วันที่วางแผน</label>
+        <div>{{ d_span(a.planned_date, a.planned_end_date) }}</div>
+      </div>
+      <div>
+        <label>เวลา</label>
+        <div>{{ 'ทั้งวัน' if a.is_all_day else t_range(a.planned_start_time, a.planned_end_time, a.duration_min) }}</div>
+      </div>
+      <div>
+        <label>ประเภท</label>
+        <div>
+          {% if a.category_name %}
+          <i class="swatch" style="background:{{ a.category_color }}"></i> {{ a.category_name }}
+          {% else %}<span class="faint">ไม่ระบุ</span>{% endif %}
+        </div>
+      </div>
+      <div>
+        <label>ผู้รับผิดชอบ</label>
+        <div>{{ a.assignee_name or '<span class="faint">ยังไม่ระบุ</span>' | safe }}</div>
+      </div>
+      <div>
+        <label>ความสำคัญ</label>
+        <div>{{ PRIORITY_LABELS[a.priority] }}</div>
+      </div>
+      {% if a.helper_names %}
+      <div>
+        <label>ผู้ช่วย</label>
+        <div>{{ a.helper_names | join(', ') }}</div>
+      </div>
+      {% endif %}
+      <div>
+        <label>งานค้าง</label>
+        <div>
+          {% if a.carry_over %}ตามมาเป็นงานของวันถัดไป{% if a.auto_skip_after_days %}
+            (เกิน {{ a.auto_skip_after_days }} วันปิดเอง){% endif %}
+          {% else %}ไม่ตามมา{% endif %}
+        </div>
+      </div>
+    </div>
+
+    {% if a.days_late %}
+    <div class="alert" style="margin:16px 0 0">
+      เลยวันที่ต้องเริ่มมา {{ a.days_late }} วันแล้วและยังไม่ได้กดเริ่ม
+      จึงถูกดึงมาแสดงในหน้างานต่อไป — วันที่ในปฏิทินยังเป็น {{ d_short(a.planned_date) }}{% if a.planned_end_date != a.planned_date %}–{{ d_short(a.planned_end_date) }}{% endif %} ตามเดิม
+      <div style="margin-top:6px">
+        เมื่อกดเริ่มงาน ระบบจะเลื่อนวันในแผนมาเป็นวันที่กดจริงให้{% if a.span_days > 1 %} (งาน {{ a.span_days }} วัน เลื่อนทั้งแผง){% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if not a.needs_start %}
+    <div class="alert info" style="margin:16px 0 0">
+      รายการนี้ตั้งไว้ว่า <strong>ไม่ต้องกดเริ่มงาน</strong> — เป็นการแจ้งให้ทราบ
+      <div class="faint" style="margin-top:6px">
+        จึงไม่มีปุ่มเริ่มงาน และจะไม่ไปกองอยู่ในงานค้าง แต่ยังขึ้นบนปฏิทินตามปกติ
+      </div>
+    </div>
+    {% endif %}
+
+    {% if a.planned_date_original %}
+    <div class="alert info" style="margin:16px 0 0">
+      แผนเดิมก่อนเลื่อน: <strong>{{ d_span(a.planned_date_original, a.planned_end_date_original) }}</strong>
+      — เลื่อนมาตรงกับวันที่ลงมือจริง
+      <div class="faint" style="margin-top:6px">
+        รายงาน "% ทำตรงแผน" ยังตัดสินจากแผนเดิมนี้ ไม่ใช่วันที่เลื่อนมาแล้ว
+      </div>
+    </div>
+    {% endif %}
+
+    {% if a.source_system %}
+    <div class="alert info" style="margin:16px 0 0">
+      งานนี้ซิงค์มาจากโปรแกรม <strong>{{ SOURCE_LABELS.get(a.source_system, a.source_system) }}</strong>
+      {% if a.date_overridden %}
+        <br>วันที่ถูกแก้ที่ปฏิทินนี้ — รอบซิงค์ถัดไปจะไม่เขียนทับ
+        และ {{ SOURCE_LABELS.get(a.source_system, a.source_system) }} จะดึงวันนี้กลับไปใช้เมื่อกดดึงผลงาน
+      {% else %}
+        <br>แก้วันที่ได้จากที่นี่ · ระบบจะจำไว้และส่งกลับไปให้โปรแกรมต้นทางใช้
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if a.description %}
+    <div style="margin-top:16px">
+      <label>รายละเอียด</label>
+      <div style="white-space:pre-wrap">{{ a.description }}</div>
+    </div>
+    {% endif %}
+
+    {% if a.cancel_reason %}
+    <div style="margin-top:16px">
+      <label>เหตุผลที่{{ STATUS_LABELS[a.status] }}</label>
+      <div>{{ a.cancel_reason }}</div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{# ── การทำงานจริง ── #}
+<div class="card">
+  <div class="card-head"><h2 class="card-title">การทำงานจริง</h2></div>
+  <div class="card-body">
+    <div class="form-grid" style="gap:12px 18px">
+      <div><label>เริ่มเมื่อ</label><div>{{ ts(a.started_at) }}</div></div>
+      <div><label>สิ้นสุดเมื่อ</label><div>{{ ts(a.finished_at) }}</div></div>
+      <div>
+        <label>เวลาที่ใช้จริง</label>
+        <div>{{ dur(a.actual_minutes) if a.actual_minutes is not none else '-' }}</div>
+      </div>
+    </div>
+
+    {% if a.can_run and a.status in ('planned', 'in_progress') %}
+    <div style="margin-top:18px">
+      {% if a.status == 'planned' and a.needs_start %}
+      {% if a.start_state == 'early' %}
+      <div class="alert" style="margin-bottom:12px">
+        ยังไม่ถึงวันที่วางแผนไว้ — เริ่ม {{ d_short(a.planned_date) }}
+        (อีก {{ a.start_days }} วัน)
+      </div>
+      {% endif %}
+      <button class="btn btn-go" type="button"
+              x-on:click='startAsk = {{ m.start_payload(a, "/activities/" ~ a.id) }}'>
+        ▶ เริ่มงาน
+      </button>
+      {% else %}
+      <form method="post" action="/activities/{{ a.id }}/finish">
+        <div class="field">
+          <label for="result_note">บันทึกผลงาน (ถ้ามี)</label>
+          <textarea id="result_note" name="result_note" rows="2"
+                    placeholder="เช่น ทำได้ครบ 4,200 ตัว เหลือวัคซีน 1 ขวด">{{ a.result_note }}</textarea>
+        </div>
+        <div style="display:flex; gap:9px; flex-wrap:wrap">
+          <button class="btn btn-stop" type="submit">■ สิ้นสุดงาน</button>
+        </div>
+      </form>
+      {# กดเริ่มผิดก็ถอนได้ — แยกฟอร์มออกมาเพราะไม่ควรส่งบันทึกผลไปด้วย #}
+      <form method="post" action="/activities/{{ a.id }}/unstart" style="margin-top:9px"
+            onsubmit="return confirm('ยกเลิกการเริ่มงาน?
+
+งานจะกลับไปเป็นแผนเหมือนยังไม่ได้กด · เวลาที่กดไว้จะถูกล้าง{% if a.planned_date_original %}
+และวันในแผนจะกลับไปเป็น {{ d_short(a.planned_date_original) }} ตามเดิม{% endif %}')">
+        <button class="btn" type="submit">↩ ยกเลิกการเริ่มงาน</button>
+      </form>
+      {# ลงมือจริงไปแล้วแต่เพิ่งมากดเริ่ม — แก้วันให้ตรงความจริงได้ #}
+      <button class="btn" type="button" style="margin-top:9px"
+              x-on:click='dateAsk = {{ m.date_payload(a, request.url.path) }}'>
+        📅 แก้วันที่เริ่มงานจริง
+      </button>
+      {% endif %}
+    </div>
+    {% elif a.can_run and a.status == 'done' %}
+    <form method="post" action="/activities/{{ a.id }}/note" style="margin-top:18px">
+      <div class="field">
+        <label for="result_note">บันทึกผลงาน</label>
+        <textarea id="result_note" name="result_note" rows="2">{{ a.result_note }}</textarea>
+      </div>
+      <button class="btn" type="submit">บันทึกผล</button>
+    </form>
+    {% elif a.result_note %}
+    <div style="margin-top:16px">
+      <label>บันทึกผลงาน</label>
+      <div style="white-space:pre-wrap">{{ a.result_note }}</div>
+    </div>
+    {% endif %}
+
+    {% if not a.can_run and a.status in ('planned', 'in_progress') %}
+    <div class="hint" style="margin-top:14px">
+      กดเริ่ม/สิ้นสุดได้เฉพาะผู้รับผิดชอบงานนี้ หรือหัวหน้างาน
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{# ── ปุ่มจัดการ ── #}
+{% if a.can_edit or can_reopen %}
+<div class="card">
+  <div class="card-head"><h2 class="card-title">จัดการกิจกรรม</h2></div>
+  <div class="card-body" style="display:flex; gap:9px; flex-wrap:wrap">
+    {% if a.can_edit %}
+    <a class="btn" href="/activities/{{ a.id }}/edit">แก้ไข</a>
+    {% endif %}
+    {% if a.can_edit and a.status not in ('done', 'cancelled', 'missed') %}
+    <button class="btn btn-danger" x-on:click="cancelOpen = true">ยกเลิกกิจกรรม</button>
+    {% endif %}
+    {% if can_reopen and a.days_late and a.status == 'planned' %}
+    <button class="btn" x-on:click="missOpen = true">ปิดว่าไม่ได้ทำ</button>
+    {% endif %}
+    {% if can_reopen and a.status in ('done', 'cancelled', 'missed') %}
+    <form method="post" action="/activities/{{ a.id }}/reopen">
+      <button class="btn" type="submit">เปิดงานกลับมา</button>
+    </form>
+    {% endif %}
+    {% if can_reopen %}
+    <div class="spacer"></div>
+    <form method="post" action="/activities/{{ a.id }}/delete"
+          onsubmit="return confirm('ลบกิจกรรมนี้ออกจากปฏิทิน? ประวัติจะยังถูกเก็บไว้ในระบบ')">
+      <button class="btn btn-danger" type="submit">ลบ</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{# ── ประวัติ ── #}
+<div class="card">
+  <div class="card-head">
+    <h2 class="card-title">ประวัติของกิจกรรมนี้</h2>
+    <span class="faint" style="font-size:12.5px">{{ log | length }} รายการ</span>
+  </div>
+  <div class="card-body">
+    <ul class="tl">
+      {% for e in log %}
+      <li class="{{ 'hi' if e.action in ('started', 'finished') }}">
+        <div>
+          <span class="tl-action">{{ ACTION_LABELS.get(e.action, e.action) }}</span>
+          <span class="tl-when">{{ ts(e.at) }}{% if e.display_name or e.username %} · {{ e.display_name or e.username }}{% endif %}</span>
+        </div>
+        {% if e.detail %}<div class="tl-detail">{{ e.detail }}</div>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+
+{# ── หน้าต่างยืนยัน ── #}
+<template x-if="cancelOpen">
+  <div>
+    <div class="modal-scrim" x-on:click="cancelOpen = false"></div>
+    <div class="modal modal-sm">
+      <form method="post" action="/activities/{{ a.id }}/cancel">
+        <div class="modal-head"><h3>ยกเลิกกิจกรรม</h3></div>
+        <div class="modal-body">
+          <p class="muted" style="margin-top:0">
+            งานจะถูกปิดเป็น "ยกเลิก" และยังอยู่ในปฏิทินเพื่อเก็บเป็นประวัติ
+          </p>
+          <div class="field">
+            <label for="reason">เหตุผล</label>
+            <input id="reason" name="reason" placeholder="เช่น เลื่อนไปรอบหน้า / ฝนตก" required>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn" type="button" x-on:click="cancelOpen = false">ไม่ยกเลิกแล้ว</button>
+          <button class="btn btn-danger" type="submit">ยืนยันยกเลิก</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</template>
+
+<template x-if="missOpen">
+  <div>
+    <div class="modal-scrim" x-on:click="missOpen = false"></div>
+    <div class="modal modal-sm">
+      <form method="post" action="/activities/{{ a.id }}/missed">
+        <div class="modal-head"><h3>ปิดว่าไม่ได้ทำ</h3></div>
+        <div class="modal-body">
+          <p class="muted" style="margin-top:0">
+            ใช้เมื่อแผนถูกต้องแต่ทำไม่ทัน — ต่างจากการยกเลิกแผน
+            งานจะหยุดตามมาเป็นงานค้างของวันถัดไป
+          </p>
+          <div class="field">
+            <label for="miss_reason">หมายเหตุ (ถ้ามี)</label>
+            <input id="miss_reason" name="reason" placeholder="เช่น คนไม่พอ">
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn" type="button" x-on:click="missOpen = false">ไม่ปิด</button>
+          <button class="btn btn-primary" type="submit">ยืนยัน</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</template>
+
+</div>
+{% endblock %}

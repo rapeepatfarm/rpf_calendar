@@ -1,0 +1,801 @@
+/* RPF Calendar — design system
+   ธีมสว่างเป็นค่าเริ่มต้น (ใช้บนมือถือกลางแดดเป็นหลัก) สลับเป็นธีมมืดได้
+   สีทั้งระบบคุมจากตัวแปรชุดเดียวด้านล่างนี้ */
+
+:root {
+  --bg:          #f4f6fa;
+  --surface:     #ffffff;
+  --surface-2:   #f7f9fc;
+  --surface-3:   #eaeff6;
+  --border:      #dde4ee;
+  --text:        #16202e;
+  --text-dim:    #55627a;
+  --text-faint:  #8592a6;
+
+  --accent:      #2f7de1;
+  --on-accent:   #ffffff;
+  --ok:          #1f9254;
+  --warn:        #c2790a;
+  --danger:      #d92d20;
+
+  --radius:      14px;
+  --radius-sm:   9px;
+  --shadow:      0 1px 2px rgba(16,32,56,.05), 0 6px 20px rgba(16,32,56,.06);
+  --sidebar-w:   234px;
+
+  --font: 'Segoe UI', 'Leelawadee UI', 'Noto Sans Thai', Tahoma, sans-serif;
+  --mono: 'Cascadia Mono', 'Consolas', ui-monospace, monospace;
+}
+
+:root[data-theme="dark"] {
+  --bg:          #0f1419;
+  --surface:     #171d26;
+  --surface-2:   #1e2631;
+  --surface-3:   #263040;
+  --border:      #2a3441;
+  --text:        #e6edf3;
+  --text-dim:    #9aa7b8;
+  --text-faint:  #6b7889;
+
+  --accent:      #4a9eff;
+  --on-accent:   #08131f;
+  --ok:          #3fb950;
+  --warn:        #d9a520;
+  --danger:      #f85149;
+  --shadow:      0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.22);
+}
+
+* { box-sizing: border-box; }
+[x-cloak] { display: none !important; }
+
+html, body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 15px;
+  -webkit-text-size-adjust: 100%;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+.muted { color: var(--text-dim); }
+.faint { color: var(--text-faint); }
+.mono { font-family: var(--mono); font-size: 12.5px; }
+.empty { padding: 38px 20px; text-align: center; color: var(--text-faint); font-size: 14px; }
+.spacer { flex: 1; }
+
+/* ── โครงหน้า ─────────────────────────────────────────────── */
+.layout { display: flex; min-height: 100vh; }
+
+.sidebar {
+  width: var(--sidebar-w); flex: 0 0 var(--sidebar-w);
+  background: var(--surface); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  position: fixed; inset: 0 auto 0 0; z-index: 40;
+  transition: transform .22s ease;
+}
+.brand { padding: 20px 18px 16px; border-bottom: 1px solid var(--border); }
+.brand-name { font-size: 17px; font-weight: 700; letter-spacing: .2px; }
+.brand-sub { font-size: 11.5px; color: var(--text-faint); margin-top: 3px; }
+
+.nav { padding: 12px 10px; flex: 1; overflow-y: auto; }
+.nav-section {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .9px;
+  color: var(--text-faint); padding: 14px 10px 6px;
+}
+.nav a {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 11px; margin-bottom: 2px;
+  border-radius: var(--radius-sm);
+  color: var(--text-dim); font-size: 14px; text-decoration: none;
+}
+.nav a:hover { background: var(--surface-2); color: var(--text); text-decoration: none; }
+.nav a.active { background: var(--surface-3); color: var(--text); font-weight: 600; }
+.nav a .ico { width: 18px; text-align: center; opacity: .85; }
+.nav a .pill {
+  margin-left: auto; font-size: 11px; font-weight: 700; padding: 1px 7px;
+  border-radius: 99px; background: var(--danger); color: #fff;
+}
+
+.sidebar-foot {
+  padding: 12px 14px; border-top: 1px solid var(--border);
+  font-size: 12.5px; color: var(--text-dim);
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+
+.main { flex: 1; margin-left: var(--sidebar-w); min-width: 0; }
+
+.topbar {
+  height: 56px; display: flex; align-items: center; gap: 12px;
+  padding: 0 20px; border-bottom: 1px solid var(--border);
+  background: var(--surface); position: sticky; top: 0; z-index: 30;
+}
+.topbar h1 { font-size: 16px; font-weight: 600; margin: 0; }
+.content { padding: 20px; max-width: 1400px; padding-bottom: 40px; }
+
+.menu-btn {
+  display: none; background: none; border: 0; color: var(--text);
+  font-size: 20px; cursor: pointer; padding: 4px 8px;
+}
+.scrim { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 35; }
+
+/* แถบเมนูล่างสำหรับมือถือ — นิ้วโป้งเอื้อมถึงง่ายกว่าเมนูบนสุด */
+.tabbar { display: none; }
+
+/* ── การ์ด ────────────────────────────────────────────────── */
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+}
+.card + .card { margin-top: 16px; }
+.card-head {
+  padding: 13px 17px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.card-title { font-size: 14.5px; font-weight: 650; margin: 0; }
+.card-body { padding: 17px; }
+.card-body.tight { padding: 8px 0; }
+
+/* ── ปุ่ม ─────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  padding: 9px 15px; min-height: 40px;
+  font: inherit; font-size: 14px; font-weight: 500;
+  background: var(--surface-3); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  cursor: pointer; text-decoration: none; white-space: nowrap;
+}
+.btn:hover { background: var(--border); text-decoration: none; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+.btn-primary:hover { background: color-mix(in srgb, var(--accent) 85%, #000); }
+.btn-go { background: var(--ok); border-color: var(--ok); color: #fff; font-weight: 600; }
+.btn-go:hover { background: color-mix(in srgb, var(--ok) 85%, #000); }
+.btn-stop { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+.btn-danger { color: var(--danger); }
+.btn-danger:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.btn-sm { padding: 5px 11px; min-height: 32px; font-size: 12.5px; }
+.btn-block { width: 100%; }
+/* ปุ่มลอยมุมขวาล่างสำหรับเพิ่มงานเร็วๆ บนจอใหญ่ */
+.fab {
+  position: fixed; right: 24px; bottom: 24px; z-index: 25;
+  width: 54px; height: 54px; border-radius: 50%; padding: 0;
+  font-size: 26px; line-height: 1; box-shadow: 0 6px 20px rgba(16,32,56,.25);
+}
+
+/* ── ป้ายสถานะและความสำคัญ ────────────────────────────────── */
+.badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 9px; border-radius: 99px;
+  font-size: 11.5px; font-weight: 600; white-space: nowrap;
+  background: var(--surface-3); color: var(--text-dim);
+}
+.badge.st-planned     { background: var(--surface-3); color: var(--text-dim); }
+.badge.st-in_progress { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+.badge.st-done        { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
+.badge.st-cancelled   { background: var(--surface-3); color: var(--text-faint); }
+.badge.st-missed      { background: var(--surface-3); color: var(--text-faint); }
+.badge.late           { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+.badge.p1 { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+.badge.p2 { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+
+.swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; flex: none; }
+
+/* ── การ์ดกิจกรรม ─────────────────────────────────────────── */
+.act-list { display: flex; flex-direction: column; gap: 10px; }
+
+.act {
+  display: flex; align-items: stretch; gap: 0;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  overflow: hidden;
+}
+/* แถบซ้าย = ความสำคัญ · สีป้าย = สถานะ — สองอย่างนี้ต้องไม่ใช้สีชุดเดียวกัน
+   ไม่งั้นผู้ใช้แยกไม่ออกว่ากำลังดูอะไร */
+.act::before { content: ''; width: 4px; flex: none; background: var(--text-faint); }
+.act.p1::before { background: var(--danger); }
+.act.p2::before { background: var(--warn); }
+.act.p3::before { background: var(--accent); }
+.act.p4::before { background: var(--text-faint); }
+.act.closed { opacity: .62; }
+
+.act-main { flex: 1; min-width: 0; padding: 12px 14px; }
+.act-top { display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap; }
+.act-title {
+  font-size: 15px; font-weight: 600; line-height: 1.35;
+  color: var(--text); text-decoration: none; flex: 1; min-width: 140px;
+}
+.act-title:hover { text-decoration: underline; }
+.act.closed .act-title { text-decoration: line-through; text-decoration-color: var(--text-faint); }
+.act-meta {
+  display: flex; align-items: center; gap: 6px 12px; flex-wrap: wrap;
+  margin-top: 6px; font-size: 12.5px; color: var(--text-dim);
+}
+.act-meta .bit { display: inline-flex; align-items: center; gap: 5px; }
+.act-note { font-size: 12.5px; color: var(--text-dim); margin-top: 7px; }
+.act-actions {
+  display: flex; align-items: center; gap: 7px;
+  padding: 12px 14px 12px 0; flex-wrap: wrap;
+}
+.act-actions form { margin: 0; }
+
+@media (max-width: 620px) {
+  .act { flex-wrap: wrap; }
+  .act-main { flex-basis: calc(100% - 4px); }
+  .act-actions { padding: 0 14px 12px; width: 100%; }
+  /* ปุ่มเริ่ม/สิ้นสุดเป็นสิ่งที่กดบ่อยที่สุดบนมือถือ ต้องใหญ่พอให้นิ้วโป้งกดไม่พลาด */
+  .act-actions .btn { flex: 1; min-height: 44px; font-size: 14px; padding: 10px 14px; }
+}
+
+/* ── ปฏิทินรายเดือน ───────────────────────────────────────── */
+/* จอใหญ่: ปฏิทินซ้าย แผงรายละเอียดขวา · จอเล็ก: แผงลงไปอยู่ใต้ปฏิทิน */
+.cal-layout { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) 340px; }
+.cal-main { min-width: 0; }
+
+.cal-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+.cal-month { font-size: 18px; font-weight: 650; min-width: 168px; }
+
+.cal {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden;
+}
+.cal-head { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.cal-head > div {
+  padding: 9px 6px; text-align: center; font-size: 11.5px; font-weight: 600;
+  color: var(--text-faint); border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.cal-head > div.wknd { color: var(--danger); }
+
+/* หนึ่งสัปดาห์ = สองชั้นซ้อนกัน
+   ชั้นล่าง (.cal-bg) คือช่องวันที่รับการคลิก
+   ชั้นบน (.cal-fg) คือแถบกิจกรรมที่กินได้หลายคอลัมน์
+   ความสูงมาจากจำนวนชั้นของแถบในสัปดาห์นั้น (--lanes) */
+.cal-week { position: relative; }
+.cal-bg {
+  position: absolute; inset: 0;
+  display: grid; grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+.cal-fg {
+  position: relative;
+  display: grid; grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-auto-rows: 21px; gap: 3px;
+  padding: 26px 3px 6px;
+  min-height: calc(26px + var(--lanes, 0) * 24px + 12px);
+  /* ปิดการรับคลิกทั้งชั้น เปิดเฉพาะตัวแถบ ช่องว่างจึงยังกดเลือกวันได้ */
+  pointer-events: none;
+}
+
+.cal-day {
+  border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
+  padding: 5px 6px; cursor: pointer;
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 4px;
+}
+.cal-day:nth-child(7n) { border-right: 0; }
+.cal-day:hover { background: var(--surface-2); }
+.cal-day.other { background: var(--surface-2); }
+.cal-day.other .cal-num { color: var(--text-faint); }
+.cal-day.today { background: color-mix(in srgb, var(--accent) 7%, var(--surface)); }
+.cal-day.sel { box-shadow: inset 0 0 0 2px var(--accent); }
+
+.cal-num {
+  font-size: 12.5px; font-weight: 600; color: var(--text-dim);
+  padding: 1px 6px; border-radius: 99px; line-height: 1.5;
+}
+.cal-day.today .cal-num { background: var(--accent); color: var(--on-accent); }
+.cal-more { font-size: 10.5px; color: var(--text-faint); padding-top: 2px; }
+
+/* แถบกิจกรรม — กว้างตามจำนวนวันที่กิจกรรมกิน */
+.cal-bar-item {
+  pointer-events: auto;
+  display: flex; align-items: center; gap: 5px; min-width: 0;
+  font: inherit; font-size: 11.5px; line-height: 1;
+  text-align: left; color: var(--text); cursor: pointer;
+  padding: 0 7px; height: 21px;
+  border: 0; border-left: 3px solid var(--bar-color);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--bar-color) 15%, var(--surface));
+  overflow: hidden; white-space: nowrap;
+}
+.cal-bar-item:hover { background: color-mix(in srgb, var(--bar-color) 28%, var(--surface)); }
+.cal-bar-title { overflow: hidden; text-overflow: ellipsis; }
+.cal-bar-item .t { color: var(--text-dim); font-variant-numeric: tabular-nums; flex: none; }
+
+/* แถบที่ถูกตัดกลางสัปดาห์ — ตัดมุมข้างนั้นเพื่อบอกว่ายังไม่จบ */
+.cal-bar-item.clip-l { border-left-width: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.cal-bar-item.clip-r { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+
+.cal-bar-item.late {
+  background: color-mix(in srgb, var(--danger) 16%, var(--surface));
+  border-left-color: var(--danger);
+}
+.cal-bar-item.st-done, .cal-bar-item.st-cancelled, .cal-bar-item.st-missed {
+  opacity: .5; text-decoration: line-through;
+}
+.cal-bar-item.st-in_progress { box-shadow: inset 0 0 0 1px var(--accent); }
+
+/* เน้นแถบที่เลือก และหรี่ตัวอื่นลงเพื่อให้สายตาไล่ตามแถบยาวข้ามสัปดาห์ได้ */
+.cal-bar-item.is-sel {
+  background: var(--bar-color); color: #fff; font-weight: 600;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--bar-color) 40%, transparent);
+  opacity: 1; text-decoration: none;
+}
+.cal-bar-item.is-sel .t { color: rgba(255,255,255,.8); }
+.cal-bar-item.is-dim { opacity: .34; }
+
+.cal-legend { margin-top: 12px; }
+
+/* ── แผงรายละเอียดของวันที่เลือก ───────────────────────────── */
+.cal-panel {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  display: flex; flex-direction: column;
+  align-self: start; position: sticky; top: 72px;
+  max-height: calc(100vh - 92px);
+}
+.panel-head {
+  padding: 13px 15px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: flex-start; gap: 10px;
+}
+.panel-date { font-size: 14.5px; font-weight: 650; }
+.panel-count { font-size: 12px; color: var(--text-faint); margin-top: 2px; }
+.panel-head .btn { margin-left: auto; flex: none; }
+
+/* ── สองแถบหัวแผง: งานต่อไป / งานค้าง ─────────────────────── */
+.panel-tabs { display: flex; border-bottom: 1px solid var(--border); }
+.panel-tab {
+  flex: 1; padding: 12px 8px; border: 0; background: none; cursor: pointer;
+  font: inherit; font-size: 13.5px; font-weight: 600; color: var(--text-dim);
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  border-bottom: 2px solid transparent;
+}
+.panel-tab:hover { background: var(--surface-2); }
+.panel-tab.on { color: var(--text); border-bottom-color: var(--accent); }
+.panel-tab-n {
+  min-width: 20px; padding: 1px 6px; border-radius: 10px;
+  background: var(--surface-3); color: var(--text-dim);
+  font-size: 11.5px; font-weight: 700;
+}
+.panel-tab-n.late {
+  background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger);
+}
+
+/* ── หนึ่งบรรทัดในลิสต์ของแผง ─────────────────────────────── */
+.panel-row-item {
+  width: 100%; display: flex; align-items: center; gap: 9px;
+  padding: 10px; margin-bottom: 6px; cursor: pointer; text-align: left;
+  background: none; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  font: inherit; color: inherit;
+}
+.panel-row-item:hover { background: var(--surface-2); border-color: var(--accent); }
+.panel-row-main { flex: 1; min-width: 0; }
+.panel-row-title {
+  display: block; font-size: 13.5px; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.panel-row-when {
+  display: block; font-size: 11.5px; color: var(--text-faint); margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.panel-row-tail { flex: none; }
+.panel-row-item.closed .panel-row-title {
+  text-decoration: line-through; color: var(--text-faint);
+}
+.panel-body { padding: 10px 12px; overflow-y: auto; flex: 1; }
+.panel-foot { padding: 11px 12px; border-top: 1px solid var(--border); }
+
+.panel-item {
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  margin-bottom: 8px; overflow: hidden;
+}
+.panel-item.open { border-color: var(--accent); }
+.panel-item.closed .panel-item-title { text-decoration: line-through; color: var(--text-faint); }
+.panel-item-head {
+  width: 100%; display: flex; align-items: center; gap: 8px;
+  padding: 10px 11px; background: none; border: 0; cursor: pointer;
+  font: inherit; text-align: left; color: var(--text);
+}
+.panel-item-head:hover { background: var(--surface-2); }
+.panel-item-title { flex: 1; min-width: 0; font-size: 13.5px; font-weight: 600; }
+.panel-item-body { padding: 2px 11px 12px; border-top: 1px solid var(--border); }
+
+.panel-row {
+  display: flex; justify-content: space-between; gap: 12px;
+  padding: 5px 0; font-size: 12.5px; border-bottom: 1px dashed var(--border);
+}
+.panel-row span { color: var(--text-faint); flex: none; }
+.panel-row b { font-weight: 600; text-align: right; }
+.panel-late {
+  margin-top: 9px; padding: 7px 9px; border-radius: var(--radius-sm);
+  font-size: 12.5px; color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+.panel-text {
+  margin-top: 9px; font-size: 12.5px; color: var(--text-dim); white-space: pre-wrap;
+}
+.panel-actions { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 12px; }
+.panel-actions form { margin: 0; }
+
+/* ── ตัวกรองแบบไอคอนในแถบบน ────────────────────────────────── */
+.filter-wrap { position: relative; }
+.filter-ico { font-size: 15px; line-height: 1; }
+.btn.has-filter { border-color: var(--accent); color: var(--accent); }
+.filter-n {
+  font-size: 10.5px; font-weight: 700; padding: 0 5px; border-radius: 99px;
+  background: var(--accent); color: var(--on-accent);
+}
+.filter-pop {
+  position: absolute; right: 0; top: calc(100% + 7px); z-index: 50;
+  width: min(268px, calc(100vw - 28px));
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: 0 12px 34px rgba(16,32,56,.18);
+  padding: 14px;
+}
+.filter-pop .field { margin-bottom: 11px; }
+.filter-pop select { padding: 8px 10px; font-size: 14px; }
+.filter-foot { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+
+/* ── เลือกวันในสัปดาห์ (ฟอร์มแผนงานประจำ) ──────────────────── */
+.weekday-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.weekday { margin: 0; cursor: pointer; }
+.weekday input { position: absolute; opacity: 0; width: 0; height: 0; }
+.weekday span {
+  display: grid; place-items: center; min-width: 42px; height: 40px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface); font-size: 13.5px; color: var(--text-dim);
+}
+.weekday input:checked + span {
+  background: var(--accent); border-color: var(--accent);
+  color: var(--on-accent); font-weight: 600;
+}
+.weekday input:focus-visible + span { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+
+
+/* ── มุมมองรายสัปดาห์ ─────────────────────────────────────── */
+.week-view .cal-head > div.now { color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surface-2)); }
+.week-bars { border-bottom: 1px solid var(--border); }
+.week-bars .cal-day { border-bottom: 0; }
+
+.week-cols { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.week-col {
+  border-right: 1px solid var(--border);
+  min-height: 190px; padding: 7px 6px;
+  display: flex; flex-direction: column; gap: 6px;
+  cursor: pointer;
+}
+.week-col:last-child { border-right: 0; }
+.week-col:hover { background: var(--surface-2); }
+.week-col.today { background: color-mix(in srgb, var(--accent) 6%, var(--surface)); }
+.week-col.sel { box-shadow: inset 0 0 0 2px var(--accent); }
+.week-empty { color: var(--text-faint); font-size: 12px; text-align: center; padding-top: 6px; }
+
+/* การ์ดงานที่ระบุเวลาในมุมมองสัปดาห์ — สูงกว่าแถบในมุมมองเดือน
+   จึงใส่ชื่อคนรับผิดชอบลงไปได้ด้วย */
+.week-card {
+  display: flex; flex-direction: column; gap: 2px; align-items: flex-start;
+  width: 100%; text-align: left; font: inherit; cursor: pointer;
+  padding: 6px 8px; border: 0; border-left: 3px solid var(--bar-color);
+  border-radius: 6px; color: var(--text);
+  background: color-mix(in srgb, var(--bar-color) 14%, var(--surface));
+}
+.week-card:hover { background: color-mix(in srgb, var(--bar-color) 26%, var(--surface)); }
+.week-card-time { font-size: 11px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.week-card-title {
+  font-size: 12.5px; font-weight: 600; line-height: 1.3;
+  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+.week-card-who { font-size: 11px; color: var(--text-dim); }
+.week-card.late {
+  background: color-mix(in srgb, var(--danger) 15%, var(--surface));
+  border-left-color: var(--danger);
+}
+.week-card.st-done, .week-card.st-cancelled, .week-card.st-missed { opacity: .5; }
+.week-card.st-done .week-card-title { text-decoration: line-through; }
+.week-card.st-in_progress { box-shadow: inset 0 0 0 1px var(--accent); }
+.week-card.is-sel {
+  background: var(--bar-color); color: #fff;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--bar-color) 40%, transparent);
+  opacity: 1;
+}
+.week-card.is-sel .week-card-time, .week-card.is-sel .week-card-who { color: rgba(255,255,255,.82); }
+.week-card.is-dim { opacity: .34; }
+
+.view-switch { display: flex; gap: 4px; }
+
+/* ── หน้าประวัติและสรุป ────────────────────────────────────── */
+.range-form { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.range-form input { width: auto; padding: 6px 9px; font-size: 13.5px; }
+
+/* แถบเปอร์เซ็นต์ — สีบอกระดับโดยไม่ต้องอ่านตัวเลข */
+.rate { display: flex; align-items: center; gap: 8px; }
+.rate-track {
+  flex: 1; min-width: 60px; height: 7px; border-radius: 99px;
+  background: var(--surface-3); overflow: hidden;
+}
+.rate-fill { display: block; height: 100%; border-radius: 99px; }
+.rate-fill.good { background: var(--ok); }
+.rate-fill.mid  { background: var(--warn); }
+.rate-fill.bad  { background: var(--danger); }
+.rate-num { font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; min-width: 44px; text-align: right; }
+.rate-of { font-size: 11px; color: var(--text-faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* ป้ายผลลัพธ์ในตารางประวัติ — ชุดสีแยกจากป้ายสถานะ เพราะตอบคำถามคนละข้อ
+   (สถานะ = ตอนนี้อยู่ขั้นไหน · ผลลัพธ์ = สุดท้ายทำได้ตามแผนไหม) */
+.badge.oc-on_time     { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
+.badge.oc-late        { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); }
+.badge.oc-missed      { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+.badge.oc-cancelled   { background: var(--surface-3); color: var(--text-faint); }
+.badge.oc-planned     { background: var(--surface-3); color: var(--text-dim); }
+.badge.oc-in_progress { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+
+.stat .hint { margin-top: 4px; }
+
+/* ── ตัวเลือกแบบชิป (ผู้ช่วย) ──────────────────────────────── */
+.chip-picker { display: flex; flex-wrap: wrap; gap: 7px; }
+.chip-pick { margin: 0; cursor: pointer; }
+.chip-pick input { position: absolute; opacity: 0; width: 0; height: 0; }
+.chip-pick span {
+  display: inline-flex; align-items: center; min-height: 38px; padding: 0 14px;
+  border: 1px solid var(--border); border-radius: 99px;
+  background: var(--surface); font-size: 13.5px; color: var(--text-dim);
+}
+.chip-pick input:checked + span {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: var(--accent); color: var(--accent); font-weight: 600;
+}
+.chip-pick input:focus-visible + span { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+
+/* ── หน้าตั้งค่า (ทางเข้ารวมสำหรับมือถือ) ─────────────────── */
+.link-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.link-card {
+  display: flex; align-items: flex-start; gap: 13px;
+  padding: 15px 16px; text-decoration: none; color: var(--text);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+}
+.link-card:hover { border-color: var(--accent); text-decoration: none; }
+.link-ico {
+  flex: none; width: 38px; height: 38px; border-radius: var(--radius-sm);
+  display: grid; place-items: center; font-size: 18px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent);
+}
+.link-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.link-text strong { font-size: 14.5px; font-weight: 650; }
+.link-text span { font-size: 12.5px; color: var(--text-dim); line-height: 1.45; }
+.link-card.danger .link-ico {
+  background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger);
+}
+.link-card.danger:hover { border-color: var(--danger); }
+
+/* ── กล่องยืนยันก่อนเริ่มงาน ───────────────────────────────── */
+.confirm-title { font-size: 15.5px; font-weight: 650; line-height: 1.35; }
+.confirm-when { font-size: 13px; color: var(--text-dim); margin-top: 5px; }
+
+/* ── รายการงานแบบ agenda (จัดกลุ่มตามวัน) ─────────────────── */
+.agenda-day { margin-bottom: 20px; }
+.agenda-head {
+  display: flex; align-items: baseline; gap: 10px;
+  padding-bottom: 7px; margin-bottom: 10px; border-bottom: 1px solid var(--border);
+}
+.agenda-title { font-size: 14.5px; font-weight: 650; }
+.agenda-date { font-size: 12.5px; color: var(--text-faint); }
+.agenda-count { margin-left: auto; font-size: 12px; color: var(--text-faint); }
+
+/* ── หัวข้อกลุ่มในหน้างานวันนี้ ────────────────────────────── */
+.sec { margin-bottom: 22px; }
+.sec-head { display: flex; align-items: center; gap: 9px; margin-bottom: 11px; }
+.sec-name { font-size: 14.5px; font-weight: 650; }
+.sec-count {
+  font-size: 11.5px; font-weight: 700; padding: 1px 8px; border-radius: 99px;
+  background: var(--surface-3); color: var(--text-dim);
+}
+.sec-hint { font-size: 12.5px; color: var(--text-faint); margin: -4px 0 11px; }
+
+/* กลุ่มงานค้าง — ล้อมกรอบสีแดงจางให้สะดุดตาตั้งแต่เปิดหน้ามา
+   ตั้งชื่อ .overdue ไม่ใช่ .alert เพราะ .alert เป็นกล่องข้อความแจ้งเตือน คนละอย่างกัน */
+.sec.overdue {
+  background: color-mix(in srgb, var(--danger) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 22%, transparent);
+  border-radius: var(--radius);
+  padding: 14px 15px 15px;
+}
+.sec.overdue .sec-head { margin-bottom: 8px; }
+.sec.overdue .sec-name { color: var(--danger); }
+.sec.overdue .sec-count {
+  background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger);
+}
+.sec.overdue .sec-hint { color: var(--text-dim); margin: 0 0 12px; }
+
+/* ── สรุปตัวเลขด้านบน ─────────────────────────────────────── */
+.stat-row {
+  display: grid; gap: 12px; margin-bottom: 18px;
+  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+}
+.stat {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 13px 15px; box-shadow: var(--shadow);
+}
+.stat-label { font-size: 11.5px; color: var(--text-faint); }
+.stat-value { font-size: 26px; font-weight: 650; margin-top: 4px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.stat.danger {
+  background: color-mix(in srgb, var(--danger) 6%, var(--surface));
+  border-color: color-mix(in srgb, var(--danger) 22%, transparent);
+}
+.stat.danger .stat-value { color: var(--danger); }
+
+/* ── timeline ประวัติ ─────────────────────────────────────── */
+.tl { list-style: none; margin: 0; padding: 0; }
+.tl li {
+  position: relative; padding: 0 0 16px 22px; border-left: 2px solid var(--border);
+}
+.tl li:last-child { border-left-color: transparent; padding-bottom: 0; }
+.tl li::before {
+  content: ''; position: absolute; left: -6px; top: 4px;
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--surface); border: 2px solid var(--text-faint);
+}
+.tl li.hi::before { border-color: var(--accent); background: var(--accent); }
+.tl-action { font-size: 13.5px; font-weight: 600; }
+.tl-when { font-size: 12px; color: var(--text-faint); margin-left: 8px; font-weight: 400; }
+.tl-detail { font-size: 12.5px; color: var(--text-dim); margin-top: 3px; }
+
+/* ── ตาราง ────────────────────────────────────────────────── */
+table.tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+table.tbl th {
+  text-align: left; font-size: 11.5px; text-transform: uppercase; letter-spacing: .6px;
+  color: var(--text-faint); font-weight: 600;
+  padding: 10px 12px; border-bottom: 1px solid var(--border); white-space: nowrap;
+}
+table.tbl td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+table.tbl tr:last-child td { border-bottom: 0; }
+table.tbl tbody tr:hover { background: var(--surface-2); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.table-scroll { overflow-x: auto; }
+.row-actions { white-space: nowrap; text-align: right; }
+.row-actions .btn { margin-left: 4px; }
+
+/* ── ฟอร์ม ────────────────────────────────────────────────── */
+label { display: block; font-size: 12.5px; color: var(--text-dim); margin-bottom: 5px; }
+input, select, textarea {
+  width: 100%; padding: 10px 11px; font: inherit; font-size: 15px;
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+}
+input[type="color"] { padding: 3px; height: 42px; }
+textarea { resize: vertical; min-height: 76px; }
+input:focus, select:focus, textarea:focus {
+  outline: none; border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+.field { margin-bottom: 14px; }
+.form-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.form-actions {
+  margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border);
+  display: flex; gap: 9px; flex-wrap: wrap;
+}
+.hint { font-size: 12px; color: var(--text-faint); margin-top: 5px; }
+.check {
+  display: flex; align-items: flex-start; gap: 9px; font-size: 14px;
+  color: var(--text); cursor: pointer; margin: 0;
+}
+.check input { width: auto; margin-top: 2px; flex: none; }
+.filters { display: flex; gap: 9px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 16px; }
+.filters .field { margin: 0; min-width: 132px; }
+.filters label { font-size: 11.5px; }
+.filters select, .filters input { padding: 7px 10px; font-size: 13.5px; }
+
+/* ── แจ้งเตือน ────────────────────────────────────────────── */
+.alert {
+  padding: 11px 14px; border-radius: var(--radius-sm); font-size: 13.5px; margin-bottom: 15px;
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger); border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+}
+.alert.ok {
+  background: color-mix(in srgb, var(--ok) 10%, transparent);
+  color: var(--ok); border-color: color-mix(in srgb, var(--ok) 30%, transparent);
+}
+
+/* ข้อความบอกที่มา ไม่ใช่ความผิดพลาด จึงไม่ใช้สีแดงของ .alert เปล่าๆ */
+.alert.info {
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  color: var(--text); border-color: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+/* ── หน้าต่างซ้อน ─────────────────────────────────────────── */
+.modal-scrim { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 60; }
+.modal {
+  position: fixed; z-index: 61; left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(560px, calc(100vw - 24px)); max-height: calc(100vh - 40px);
+  display: flex; flex-direction: column;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: 0 24px 64px rgba(0,0,0,.3);
+}
+.modal form { display: flex; flex-direction: column; min-height: 0; }
+.modal-head {
+  padding: 15px 19px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 12px;
+}
+.modal-head h3 { margin: 0; font-size: 16px; font-weight: 650; }
+.modal-body { padding: 19px; overflow-y: auto; }
+.modal-foot {
+  padding: 13px 19px; border-top: 1px solid var(--border);
+  display: flex; justify-content: flex-end; gap: 9px;
+}
+
+/* ── หน้าเข้าสู่ระบบ ──────────────────────────────────────── */
+.login-wrap { min-height: 100vh; display: grid; place-items: center; padding: 20px; }
+.login-card { width: 100%; max-width: 372px; }
+.login-card .card-body { padding: 26px; }
+.login-title { font-size: 21px; font-weight: 700; margin: 0 0 4px; }
+.login-sub { font-size: 13px; color: var(--text-faint); margin-bottom: 22px; }
+
+/* ── มือถือ ───────────────────────────────────────────────── */
+@media (max-width: 1023px) {
+  .sidebar { transform: translateX(-100%); }
+  .sidebar.open { transform: translateX(0); }
+  .main { margin-left: 0; }
+  .menu-btn { display: block; }
+  .content { padding: 14px 14px 78px; }   /* เว้นที่ให้แถบเมนูล่าง */
+  .fab { display: none; }                  /* มีปุ่มเพิ่มอยู่ในแถบล่างแล้ว */
+
+  .tabbar {
+    /* auto-columns แทนจำนวนคงที่ เพราะปุ่ม "งานประจำ" ซ่อนสำหรับพนักงาน
+       ถ้าตรึงไว้ 5 ช่องจะเหลือช่องว่างค้างอยู่ */
+    display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 45;
+    background: var(--surface); border-top: 1px solid var(--border);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .tabbar a {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 3px; padding: 8px 2px 7px; min-height: 56px;
+    font-size: 10.5px; color: var(--text-faint); text-decoration: none;
+  }
+  .tabbar a:hover { text-decoration: none; }
+  .tabbar a .ico { font-size: 19px; line-height: 1; }
+  .tabbar a.active { color: var(--accent); font-weight: 600; }
+  .tabbar a { position: relative; }
+  .tabbar a .pill {
+    position: absolute; top: 4px; left: 50%; margin-left: 4px;
+    font-size: 10px; font-weight: 700; padding: 0 5px;
+    border-radius: 99px; background: var(--danger); color: #fff;
+  }
+  .tabbar a .ico { font-size: 18px; }
+
+  /* แผงรายละเอียดย้ายลงใต้ปฏิทิน และเลิก sticky เพื่อไม่ให้บังปฏิทิน */
+  .cal-layout { grid-template-columns: 1fr; }
+  .cal-panel { position: static; max-height: none; }
+
+  /* ช่องวันเตี้ยลงและแถบบางลง เพื่อให้ปฏิทินทั้งเดือนกับแผงรายละเอียด
+     อยู่ในจอเดียวกันได้ ไม่ต้องเลื่อนขึ้นลงบ่อย */
+  .cal-fg {
+    grid-auto-rows: 16px; gap: 2px; padding: 21px 2px 4px;
+    min-height: calc(21px + var(--lanes, 0) * 18px + 8px);
+  }
+  .cal-bar-item { height: 16px; font-size: 10px; padding: 0 4px; gap: 3px; }
+  .cal-bar-item .t { display: none; }
+  .cal-day { padding: 3px 4px; }
+  .cal-num { font-size: 11.5px; padding: 0 4px; }
+  .cal-month { font-size: 16px; min-width: 0; }
+  .cal-legend { display: none; }
+
+  /* มุมมองสัปดาห์บนมือถือ — 7 คอลัมน์แคบเกินอ่าน จึงเลื่อนแนวนอนได้
+     (นี่คือที่เดียวในโปรแกรมที่ยอมให้เลื่อนแนวนอน เพราะตารางสัปดาห์
+     บีบให้พอ 375px แล้วอ่านไม่ออกจริงๆ) */
+  .week-view { overflow-x: auto; }
+  .week-view .cal-head,
+  .week-view .week-cols,
+  .week-view .cal-bg,
+  .week-view .cal-fg { min-width: 620px; }
+  .week-col { min-height: 150px; }
+}
+
+@media (max-width: 480px) {
+  .stat-row { grid-template-columns: repeat(2, 1fr); }
+  .stat-value { font-size: 22px; }
+  .form-grid { grid-template-columns: 1fr; }
+}
