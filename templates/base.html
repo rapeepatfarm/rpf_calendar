@@ -43,6 +43,11 @@
       <a href="/plans" class="{{ 'active' if path.startswith('/plans') }}">
         <span class="ico">↻</span> แผนงานประจำ
       </a>
+      {# v2: ใครประจำจุดไหน — ป้ายเลขคือจำนวนจุดที่จะขาดคนใน 30 วัน (ไม่ใช่งานค้าง) #}
+      <a href="/duty" class="{{ 'active' if path.startswith('/duty') }}">
+        <span class="ico">⌂</span> หน้าที่ประจำ
+        {% if duty_short_n %}<span class="pill">{{ duty_short_n }}</span>{% endif %}
+      </a>
 
       <div class="nav-section">ข้อมูลหลัก</div>
       <a href="/master/categories" class="{{ 'active' if path.startswith('/master/categories') }}">
@@ -118,7 +123,7 @@
     <a href="/history" class="{{ 'active' if path.startswith('/history') }}">
       <span class="ico">▥</span>รายงาน
     </a>
-    <a href="/settings" class="{{ 'active' if path == '/settings' or path.startswith(('/master', '/settings/', '/account', '/leaves')) }}">
+    <a href="/settings" class="{{ 'active' if path == '/settings' or path.startswith(('/master', '/settings/', '/account', '/leaves', '/duty')) }}">
       <span class="ico">⚙</span>ตั้งค่า
     </a>
   </nav>

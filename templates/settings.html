@@ -11,6 +11,27 @@
 
 {% if user.role in ('admin', 'manager') %}
 <div class="sec-head" style="margin-bottom:11px">
+  <span class="sec-name">พนักงาน</span>
+</div>
+<div class="link-grid">
+  {# หน้าที่ประจำไม่อยู่ในแถบล่างของมือถือ (มี 4 ปุ่มพอดีแล้ว) จึงต้องมีทางเข้าที่นี่ (กติกา 12c) #}
+  <a class="link-card" href="/duty">
+    <span class="link-ico">⌂</span>
+    <span class="link-text">
+      <strong>หน้าที่ประจำ{% if duty_short_n %} <span class="pill">{{ duty_short_n }}</span>{% endif %}</strong>
+      <span>ใครประจำจุดไหน (โรงเรือน · โรงงานอาหาร · BIOGAS) · คนแทน · จุดที่ขาดคน</span>
+    </span>
+  </a>
+  <a class="link-card" href="/leaves">
+    <span class="link-ico">◔</span>
+    <span class="link-text">
+      <strong>วันลา</strong>
+      <span>บันทึกวันลาล่วงหน้า · ลาครึ่งวัน · ประเภทการลา</span>
+    </span>
+  </a>
+</div>
+
+<div class="sec-head" style="margin:22px 0 11px">
   <span class="sec-name">ข้อมูลหลัก</span>
 </div>
 <div class="link-grid">

@@ -119,6 +119,129 @@ def test_leave_bars_share_lanes_with_activities():
     assert lanes["activity"] != lanes["leave"]
 
 
+# ── หน้าที่ประจำ: ประจำจุด / ว่าง / ขาดคน (เฟส C) ──────────────
+
+def post(id, name, required_n=None):
+    return {"id": id, "name": name, "required_n": required_n, "sort_order": id}
+
+
+def assign(id, post_id, staff_id, start, end=None, covers=None, name=None, active=True):
+    return {"id": id, "post_id": post_id, "staff_id": staff_id,
+            "starts_on": date.fromisoformat(start),
+            "ends_on": date.fromisoformat(end) if end else None,
+            "covers_staff_id": covers, "covers_name": f"คน{covers}" if covers else None,
+            "staff_name": name or f"คน{staff_id}", "staff_color": "#000", "staff_active": active,
+            "post_name": f"จุด{post_id}"}
+
+
+def person(id, dept=""):
+    return {"id": id, "name": f"คน{id}", "color": "#000", "department_name": dept}
+
+
+HOUSE_A = post(1, "โรงเรือน A", required_n=2)
+D = date(2026, 9, 20)
+
+
+def test_open_ended_assignment_covers_any_later_day():
+    rows = [assign(1, 1, 11, "2026-01-01")]
+    r = staffing.roster_for_day([HOUSE_A], rows, [], date(2030, 1, 1))[0]
+    assert [a["staff_id"] for a in r["present"]] == [11]
+
+
+def test_ended_assignment_does_not_count_after_its_end():
+    rows = [assign(1, 1, 11, "2026-01-01", "2026-09-19")]
+    r = staffing.roster_for_day([HOUSE_A], rows, [], D)[0]
+    assert r["present"] == [] and r["have"] == 0
+
+
+def test_leave_makes_a_regular_worker_absent_and_the_post_short():
+    rows = [assign(1, 1, 11, "2026-01-01"), assign(2, 1, 12, "2026-01-01")]
+    leaves = [leave(1, 11, "2026-09-20", "2026-09-21")]
+    r = staffing.roster_for_day([HOUSE_A], rows, leaves, D)[0]
+    assert [a["staff_id"] for a in r["absent"]] == [11]
+    assert r["have"] == 1 and r["need"] == 2 and r["short"] and r["missing"] == 1
+
+
+def test_a_substitute_fills_the_gap():
+    rows = [assign(1, 1, 11, "2026-01-01"), assign(2, 1, 12, "2026-01-01"),
+            assign(3, 1, 13, "2026-09-20", "2026-09-21", covers=11)]
+    leaves = [leave(1, 11, "2026-09-20", "2026-09-21")]
+    r = staffing.roster_for_day([HOUSE_A], rows, leaves, D)[0]
+    assert [a["staff_id"] for a in r["covering"]] == [13]
+    assert r["have"] == 2 and not r["short"]
+
+
+def test_a_substitute_who_is_also_on_leave_does_not_count():
+    rows = [assign(1, 1, 11, "2026-01-01"), assign(2, 1, 12, "2026-01-01"),
+            assign(3, 1, 13, "2026-09-20", "2026-09-21", covers=11)]
+    leaves = [leave(1, 11, "2026-09-20", "2026-09-21"), leave(2, 13, "2026-09-20", "2026-09-20")]
+    r = staffing.roster_for_day([HOUSE_A], rows, leaves, D)[0]
+    assert r["covering"] == [] and r["short"]
+
+
+def test_required_n_is_a_minimum_not_the_roster_size():
+    """ประจำ 3 ต้องการอย่างน้อย 2 → ลา 1 คนไม่ขาด · ลา 2 คนถึงขาด"""
+    rows = [assign(i, 1, 10 + i, "2026-01-01") for i in range(1, 4)]
+    one = staffing.roster_for_day([HOUSE_A], rows, [leave(1, 11, "2026-09-20", "2026-09-20")], D)[0]
+    assert not one["short"] and one["have"] == 2
+    two = staffing.roster_for_day([HOUSE_A], rows, [
+        leave(1, 11, "2026-09-20", "2026-09-20"), leave(2, 12, "2026-09-20", "2026-09-20")], D)[0]
+    assert two["short"] and two["missing"] == 1
+
+
+def test_required_n_null_means_everyone_must_be_present():
+    strict = post(2, "Office")
+    rows = [assign(1, 2, 11, "2026-01-01"), assign(2, 2, 12, "2026-01-01")]
+    r = staffing.roster_for_day([strict], rows, [leave(1, 12, "2026-09-20", "2026-09-20")], D)[0]
+    assert r["need"] == 2 and r["short"]
+    r2 = staffing.roster_for_day([strict], rows, [], D)[0]
+    assert not r2["short"]
+
+
+def test_inactive_staff_still_on_the_roster_are_ignored():
+    """คนที่ถูกปิดใช้งาน (ลาออก) แต่ยังไม่มีใครไปจบผังให้ ต้องไม่ทำให้ระบบเห็นว่ามีคน"""
+    rows = [assign(1, 1, 11, "2026-01-01", active=False), assign(2, 1, 12, "2026-01-01")]
+    r = staffing.roster_for_day([HOUSE_A], rows, [], D)[0]
+    assert r["have"] == 1 and r["short"]
+
+
+def test_free_staff_excludes_both_leave_and_assigned():
+    staff = [person(11), person(12), person(13), person(14)]
+    rows = [assign(1, 1, 11, "2026-01-01"), assign(2, 1, 13, "2026-09-20", "2026-09-20", covers=11)]
+    leaves = [leave(1, 12, "2026-09-20", "2026-09-20")]
+    free = staffing.free_on(staff, rows, leaves, D)
+    assert [s["id"] for s in free] == [14]
+
+
+def test_shortfalls_merge_consecutive_days_into_one_range():
+    rows = [assign(1, 1, 11, "2026-01-01"), assign(2, 1, 12, "2026-01-01")]
+    leaves = [leave(1, 11, "2026-09-20", "2026-09-22")]
+    runs = staffing.shortfalls([HOUSE_A], rows, leaves, date(2026, 9, 15), date(2026, 9, 30))
+    assert len(runs) == 1
+    run = runs[0]
+    assert (run["date_from"], run["date_to"]) == (date(2026, 9, 20), date(2026, 9, 22))
+    assert run["missing"] == 1 and run["absent_names"] == ["คน11"]
+
+
+def test_shortfalls_split_when_the_gap_changes_size():
+    rows = [assign(1, 1, 11, "2026-01-01"), assign(2, 1, 12, "2026-01-01")]
+    leaves = [leave(1, 11, "2026-09-20", "2026-09-22"), leave(2, 12, "2026-09-21", "2026-09-21")]
+    runs = staffing.shortfalls([HOUSE_A], rows, leaves, date(2026, 9, 19), date(2026, 9, 23))
+    spans = [(r["date_from"].day, r["date_to"].day, r["missing"]) for r in runs]
+    assert spans == [(20, 20, 1), (21, 21, 2), (22, 22, 1)]
+
+
+def test_shortfalls_for_one_person_only_report_posts_they_belong_to():
+    """ตอนบันทึกการลาของคน 11 ต้องเห็นเฉพาะจุดที่เขาประจำ ไม่ใช่ทุกจุดที่ขาดอยู่แล้ว"""
+    house_b = post(2, "โรงเรือน B", required_n=1)
+    rows = [assign(1, 1, 11, "2026-01-01"), assign(2, 1, 12, "2026-01-01")]   # B ไม่มีใครเลย
+    leaves = [leave(1, 11, "2026-09-20", "2026-09-20")]
+    runs = staffing.shortfalls([HOUSE_A, house_b], rows, leaves, D, D, staff_id=11)
+    assert [r["post"]["name"] for r in runs] == ["โรงเรือน A"]
+    everything = staffing.shortfalls([HOUSE_A, house_b], rows, leaves, D, D)
+    assert sorted(r["post"]["name"] for r in everything) == ["โรงเรือน A", "โรงเรือน B"]
+
+
 # ── ข้อมูลสำหรับแถบพนักงาน ──────────────────────────────────
 
 def test_panel_data_sends_raw_iso_dates_for_js_and_thai_text_for_display():

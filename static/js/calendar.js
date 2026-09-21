@@ -23,6 +23,7 @@ function calendarPage(data) {
     staff: data.staff || [],
     leaves: data.leaves || [],
     dayLabels: data.dayLabels || {},    // ชื่อวันไทยจากเซิร์ฟเวอร์ — ห้ามจัดรูปวันไทยใน JS
+    duty: data.duty || {},              // {iso: {posts, free, short}} จาก staffing.roster_range
     canManage: !!data.canManage,
 
     tab: 'next',
@@ -62,10 +63,28 @@ function calendarPage(data) {
       return this.staff.filter(s => !away.has(s.id));
     },
 
-    /** จัดกลุ่มคนที่มาทำงานตามฝ่าย — ทะเบียนส่งมาเรียงตามฝ่ายอยู่แล้ว จึงแค่หั่นตามชื่อ */
-    get presentGroups() {
+    /** หน้าที่ประจำของวันที่เลือก (เฟส C) — คำนวณมาจากเซิร์ฟเวอร์แล้ว ที่นี่แค่หยิบ */
+    get dayDuty() {
+      return this.duty[this.staffDay] || null;
+    },
+
+    get dayPosts() {
+      return this.dayDuty ? this.dayDuty.posts : [];
+    },
+
+    get shortPosts() {
+      return this.dayPosts.filter(p => p.short);
+    },
+
+    /** คนว่างจริง (ไม่ลา ไม่ประจำจุด) เมื่อมีจุดงาน · ถ้ายังไม่ได้ตั้งจุดงานเลย = ทุกคนที่ไม่ลา */
+    get dayFree() {
+      return this.dayPosts.length ? this.dayDuty.free : this.dayPresent;
+    },
+
+    /** จัดกลุ่มตามฝ่าย — ทะเบียนส่งมาเรียงตามฝ่ายอยู่แล้ว จึงแค่หั่นตามชื่อ */
+    get freeGroups() {
       const groups = [];
-      for (const s of this.dayPresent) {
+      for (const s of this.dayFree) {
         const name = s.department || 'ยังไม่ระบุฝ่าย';
         const last = groups[groups.length - 1];
         if (last && last.name === name) {

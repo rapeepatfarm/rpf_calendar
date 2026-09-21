@@ -87,6 +87,11 @@ def calendar_page(request: Request, y: int = 0, m: int = 0, d: str = "", a: int 
             day_labels[cursor.isoformat()] = thaidate.long(cursor)
             cursor += timedelta(days=1)
 
+        # หน้าที่ประจำรายวัน (เฟส C) — ใครประจำจุดไหน ใครแทน ใครว่าง จุดไหนขาดคน
+        # คำนวณที่เซิร์ฟเวอร์ทั้งหมดเพราะนิยาม "ขาดคน" ต้องอยู่ที่เดียว (staffing.py)
+        roster = staffing.roster_range(conn, grid_start, grid_end)
+        short_days = {iso: " · ".join(r["short_names"]) for iso, r in roster.items() if r["short"]}
+
         # วันที่ถูกเลือกไว้ (ไฮไลต์ในตาราง + ใช้เป็นวันตั้งต้นของปุ่มเพิ่มงาน)
         selected = thaidate.parse_iso(d)
         if selected is None and first <= today <= last:
@@ -115,6 +120,7 @@ def calendar_page(request: Request, y: int = 0, m: int = 0, d: str = "", a: int 
                                  "department": s["department"] or ""} for s in staff_rows],
                     leaves_json=staffing.panel_data(leaves),
                     day_labels=day_labels,
+                    duty_json=roster, short_days=short_days,
                     tab="staff" if tab == "staff" else "",
                     ahead_days=PANEL_AHEAD_DAYS,
                     picked_id=a or 0,

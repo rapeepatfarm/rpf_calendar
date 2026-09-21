@@ -106,8 +106,20 @@ def save_leave(request: Request,
             staffing.update(conn, leave_id, data, user)
             msg = "แก้ไขการลาแล้ว"
         else:
-            staffing.create(conn, data, user)
+            leave_id = staffing.create(conn, data, user)
             msg = "บันทึกการลาแล้ว"
+
+        # §29.6 — จังหวะที่ควรถามหาคนแทนคือตอนบันทึกการลา: ถ้าการลานี้ทำให้จุดงานที่เขาประจำ
+        # ขาดคน ให้พาไปหน้าหน้าที่ประจำพร้อมกล่องบอกว่าจุดไหน ช่วงไหน แล้วกดระบุคนแทนได้เลย
+        # ดูเฉพาะช่วงที่ยังมาไม่ถึง — การลาย้อนหลังไม่ต้องหาคนแทนแล้ว
+        today = thaidate.today()
+        if data["date_to"] >= today:
+            runs = staffing.shortfalls_between(conn, max(data["date_from"], today),
+                                               data["date_to"], staff_id=data["staff_id"])
+            if runs:
+                names = ", ".join(sorted({r["post"]["name"] for r in runs}))
+                return _redirect(f"/duty?ask={leave_id}&next={quote(back, safe='')}",
+                                 ok=f"{msg} — {names} จะขาดคน ระบุคนแทนไหม")
     return _redirect(back, ok=msg, keep=keep)
 
 

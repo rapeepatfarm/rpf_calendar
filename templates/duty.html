@@ -1,0 +1,360 @@
+{% extends "base.html" %}
+{% block title %}หน้าที่ประจำ · RPF Calendar{% endblock %}
+{% block page_title %}หน้าที่ประจำ{% endblock %}
+
+{% set blank_post = {'id': '', 'name': '', 'department_id': '', 'required_n': '',
+                     'description': '', 'sort_order': 0, 'active': True} %}
+{% set blank_assign = {'id': '', 'post_id': '', 'staff_id': '', 'starts_on': today_iso,
+                       'ends_on': '', 'covers_staff_id': '', 'note': ''} %}
+
+{% macro run_line(r) -%}
+  <b>{{ r.post.name }}</b> ขาด {{ r.missing }} คน · {{ d_span(r.date_from, r.date_to) }}
+  <span class="faint">(มี {{ r.have }} ต้องการ {{ r.need }}{% if r.absent_names %} · ลา: {{ r.absent_names | join(', ') }}{% endif %})</span>
+{%- endmacro %}
+
+{% macro cover_button(r, label='ระบุคนแทน') -%}
+  <button class="btn btn-sm btn-primary" type="button" x-on:click='openAssign({{ {
+    'id': '', 'post_id': r.post.id, 'staff_id': '', 'starts_on': r.date_from.isoformat(),
+    'ends_on': r.date_to.isoformat(), 'covers_staff_id': (r.absent_ids[0] if r.absent_ids else ''),
+    'note': '' } | tojson }}, "cover")'>{{ label }}</button>
+{%- endmacro %}
+
+{% block topbar_extra %}
+<button class="btn btn-primary btn-sm" x-on:click="$dispatch('open-post')">+ เพิ่มจุดงาน</button>
+{% endblock %}
+
+{% block content %}
+<div x-data='dutyPage({ blankPost: {{ blank_post | tojson }}, blankAssign: {{ blank_assign | tojson }} })'
+     x-on:open-post.window="openPost(blankPost)">
+
+{# ── การลาที่เพิ่งบันทึก → กระทบจุดไหน (§29.6 ถามหาคนแทนตอนบันทึกลา) ── #}
+{% if asked %}
+<div class="card ask-cover" style="margin-bottom:16px">
+  <div class="card-body">
+    <div style="font-weight:650; margin-bottom:6px">
+      บันทึกการลาของ {{ asked.staff_name }} {{ d_span(asked.date_from, asked.date_to) }} แล้ว
+    </div>
+    {% if asked_runs %}
+    <div class="hint" style="margin-bottom:8px">การลานี้ทำให้จุดงานขาดคน — ระบุคนแทนได้เลยจากตรงนี้</div>
+    {% for r in asked_runs %}
+    <div class="run-row">
+      <span class="run-text">{{ run_line(r) }}</span>
+      {{ cover_button(r) }}
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="hint">ไม่กระทบจุดงานไหน — ทุกจุดยังมีคนครบตามขั้นต่ำ</div>
+    {% endif %}
+    {% if next_url != '/duty' %}
+    <div style="margin-top:10px"><a class="btn btn-sm" href="{{ next_url }}">‹ กลับ</a></div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{# ── จุดที่จะขาดคน ── #}
+{% if runs %}
+<div class="card" style="margin-bottom:16px">
+  <div class="card-head">
+    <h2 class="card-title">⚠ จุดที่ขาดคนใน {{ ahead_days }} วันข้างหน้า</h2>
+    <span class="badge late">{{ runs | length }} ช่วง</span>
+  </div>
+  <div class="card-body">
+    {% for r in runs %}
+    <div class="run-row">
+      <span class="run-text">{{ run_line(r) }}</span>
+      {{ cover_button(r) }}
+    </div>
+    {% endfor %}
+    <div class="hint" style="margin-top:8px">
+      "ขาด" = คนที่อยู่จริง (ไม่ลา) รวมคนแทน น้อยกว่าขั้นต่ำของจุด · จุดที่ไม่ตั้งขั้นต่ำถือว่าต้องครบทุกคน
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ── ตัวกรอง ── #}
+<div class="filters">
+  <form method="get" action="/duty" class="head-filters">
+    <select name="department_id" onchange="this.form.submit()" aria-label="กรองตามฝ่าย">
+      <option value="">ทุกฝ่าย</option>
+      {% for d in departments %}
+      <option value="{{ d.id }}" {{ 'selected' if flt.department_id == d.id }}>{{ d.name }}</option>
+      {% endfor %}
+    </select>
+    {% if show_all %}<input type="hidden" name="all" value="1">{% endif %}
+  </form>
+  <div class="spacer"></div>
+  {% if show_all %}
+  <a class="btn btn-sm" href="/duty{% if flt.department_id %}?department_id={{ flt.department_id }}{% endif %}">ซ่อนที่จบแล้ว</a>
+  {% else %}
+  <a class="btn btn-sm" href="/duty?all=1{% if flt.department_id %}&department_id={{ flt.department_id }}{% endif %}">แสดงที่จบแล้วด้วย</a>
+  {% endif %}
+</div>
+
+{# ── จุดงานทีละใบ ── #}
+{% for p in posts %}
+{% set st = today_state.get(p.id) %}
+{% set rows = by_post.get(p.id, {'regular': [], 'covers': []}) %}
+<div class="card post-card{{ ' inactive' if not p.active }}" style="margin-bottom:14px">
+  <div class="card-head">
+    <h2 class="card-title">{{ p.name }}</h2>
+    {% if p.department_name %}<span class="badge">{{ p.department_name }}</span>{% endif %}
+    <span class="faint" style="font-size:12.5px">
+      {% if p.required_n is not none %}ต้องมีอย่างน้อย {{ p.required_n }} คน{% else %}ต้องครบทุกคน{% endif %}
+    </span>
+    {% if not p.active %}<span class="badge">ปิดใช้งาน</span>
+    {% elif st %}
+      {% if st.short %}<span class="badge late">วันนี้ขาด {{ st.missing }} · มี {{ st.have }}/{{ st.need }}</span>
+      {% else %}<span class="badge st-done">วันนี้ {{ st.have }}/{{ st.need }} คน</span>{% endif %}
+    {% endif %}
+    <div class="spacer"></div>
+    {% if p.active %}
+    <button class="btn btn-sm" x-on:click='openAssign({{ {'id': '', 'post_id': p.id, 'staff_id': '',
+      'starts_on': today_iso, 'ends_on': '', 'covers_staff_id': '', 'note': ''} | tojson }}, "regular")'>+ คนประจำ</button>
+    <button class="btn btn-sm" x-on:click='openAssign({{ {'id': '', 'post_id': p.id, 'staff_id': '',
+      'starts_on': today_iso, 'ends_on': today_iso, 'covers_staff_id': '', 'note': ''} | tojson }}, "cover")'>+ คนแทน</button>
+    {% endif %}
+    <button class="btn btn-sm" x-on:click='openPost({{ {'id': p.id, 'name': p.name,
+      'department_id': p.department_id or '', 'required_n': p.required_n if p.required_n is not none else '',
+      'description': p.description, 'sort_order': p.sort_order, 'active': p.active} | tojson }})'>แก้ไข</button>
+    <form method="post" action="/duty/posts/{{ p.id }}/delete" style="display:inline"
+          onsubmit="return confirm('ลบจุดงาน {{ p.name }}?')">
+      <button class="btn btn-sm btn-danger" type="submit">ลบ</button>
+    </form>
+  </div>
+  {% if p.description %}<div class="card-body" style="padding-bottom:0"><div class="faint" style="font-size:13px">{{ p.description }}</div></div>{% endif %}
+  <div class="card-body tight">
+    <div class="table-scroll">
+      <table class="tbl">
+        <thead>
+          <tr><th>คนประจำ</th><th>ตั้งแต่</th><th>ถึง</th><th>วันนี้</th><th>หมายเหตุ</th><th></th></tr>
+        </thead>
+        <tbody>
+        {% for a in rows.regular %}
+          <tr class="{{ 'faint' if a.ends_on and a.ends_on < today() }}">
+            <td style="white-space:nowrap"><i class="swatch" style="background:{{ a.staff_color }}"></i> {{ a.staff_name }}
+              {% if not a.staff_active %}<span class="badge">ปิดใช้งาน</span>{% endif %}</td>
+            <td style="white-space:nowrap">{{ d_short(a.starts_on) }}</td>
+            <td style="white-space:nowrap">{{ d_short(a.ends_on) if a.ends_on else 'ไม่มีกำหนด' }}</td>
+            <td>
+              {% if a.starts_on > today() %}<span class="faint">ยังไม่เริ่ม</span>
+              {% elif a.ends_on and a.ends_on < today() %}<span class="faint">จบแล้ว</span>
+              {% elif a.staff_id in absent_today.get(p.id, []) %}<span class="badge" style="background:color-mix(in srgb, var(--warn) 18%, transparent); color:var(--warn)">ลา</span>
+              {% else %}<span class="badge st-done">อยู่</span>{% endif %}
+            </td>
+            <td class="faint">{{ a.note }}</td>
+            <td class="row-actions">
+              <button class="btn btn-sm" x-on:click='openAssign({{ {'id': a.id, 'post_id': a.post_id,
+                'staff_id': a.staff_id, 'starts_on': a.starts_on.isoformat(),
+                'ends_on': a.ends_on.isoformat() if a.ends_on else '', 'covers_staff_id': '',
+                'note': a.note} | tojson }}, "regular")'>แก้ไข</button>
+              {% if not a.ends_on %}
+              <button class="btn btn-sm" x-on:click='openEnd({{ {'id': a.id, 'name': a.staff_name,
+                'ends_on': today_iso} | tojson }})'>จบ</button>
+              {% endif %}
+              <form method="post" action="/duty/assign/{{ a.id }}/delete" style="display:inline"
+                    onsubmit="return confirm('ลบ {{ a.staff_name }} ออกจาก {{ p.name }}? (ถ้าแค่ย้ายจุด ใช้ปุ่ม จบ แทน)')">
+                <button class="btn btn-sm btn-danger" type="submit">ลบ</button>
+              </form>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="6"><div class="empty" style="padding:18px">ยังไม่มีคนประจำจุดนี้</div></td></tr>
+        {% endfor %}
+        {% if rows.covers %}
+          <tr><th colspan="6" class="sub-head">คนแทนชั่วคราว</th></tr>
+          {% for a in rows.covers %}
+          <tr class="{{ 'faint' if a.ends_on and a.ends_on < today() }}">
+            <td style="white-space:nowrap"><i class="swatch" style="background:{{ a.staff_color }}"></i> {{ a.staff_name }}
+              <span class="faint">แทน {{ a.covers_name or '-' }}</span></td>
+            <td style="white-space:nowrap">{{ d_short(a.starts_on) }}</td>
+            <td style="white-space:nowrap">{{ d_short(a.ends_on) if a.ends_on else 'ไม่มีกำหนด' }}</td>
+            <td></td>
+            <td class="faint">{{ a.note }}</td>
+            <td class="row-actions">
+              <button class="btn btn-sm" x-on:click='openAssign({{ {'id': a.id, 'post_id': a.post_id,
+                'staff_id': a.staff_id, 'starts_on': a.starts_on.isoformat(),
+                'ends_on': a.ends_on.isoformat() if a.ends_on else '',
+                'covers_staff_id': a.covers_staff_id or '', 'note': a.note} | tojson }}, "cover")'>แก้ไข</button>
+              <form method="post" action="/duty/assign/{{ a.id }}/delete" style="display:inline"
+                    onsubmit="return confirm('ลบคนแทน {{ a.staff_name }}?')">
+                <button class="btn btn-sm btn-danger" type="submit">ลบ</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="card"><div class="card-body"><div class="empty">
+  ยังไม่มีจุดงาน — กด "+ เพิ่มจุดงาน" เช่น โรงเรือน A · โรงงานอาหารสัตว์ · BIOGAS · Office
+</div></div></div>
+{% endfor %}
+
+<div class="hint" style="margin-top:4px">
+  หน้าที่ประจำคือ "ใครอยู่จุดไหนทุกวัน" ไม่ต้องกดเริ่ม/จบ และไม่ขึ้นบนปฏิทิน ·
+  ย้ายคนไปจุดอื่น = กด <b>จบ</b> ที่จุดเดิม แล้วเพิ่มที่จุดใหม่ (ประวัติจะได้อยู่ครบ) ·
+  คนลาให้บันทึกที่หน้าวันลา ระบบจะมาบอกที่นี่ว่าจุดไหนขาดคน
+</div>
+
+{# ── ฟอร์มจุดงาน ── #}
+<template x-if="postOpen">
+  <div>
+    <div class="modal-scrim" x-on:click="postOpen = false"></div>
+    <div class="modal">
+      <form method="post" action="/duty/posts/save">
+        <div class="modal-head"><h3 x-text="post.id ? 'แก้ไขจุดงาน' : 'เพิ่มจุดงาน'"></h3></div>
+        <div class="modal-body">
+          <input type="hidden" name="id" :value="post.id">
+          <div class="field">
+            <label>ชื่อจุดงาน *</label>
+            <input name="name" x-model="post.name" required maxlength="60" placeholder="เช่น โรงเรือน A">
+          </div>
+          <div class="form-grid">
+            <div class="field">
+              <label>ฝ่าย</label>
+              <select name="department_id" x-model="post.department_id">
+                <option value="">ไม่ระบุ</option>
+                {% for d in departments %}<option value="{{ d.id }}">{{ d.name }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="field">
+              <label>จำนวนคนขั้นต่ำ</label>
+              <input name="required_n" type="number" min="0" max="99" x-model="post.required_n"
+                     placeholder="เว้นว่าง = ต้องครบทุกคน">
+              <div class="hint">ประจำ 3 ต้องการอย่างน้อย 2 → ลา 1 คนไม่เตือน</div>
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="field">
+              <label>รายละเอียด</label>
+              <input name="description" x-model="post.description" maxlength="200">
+            </div>
+            <div class="field">
+              <label>ลำดับการแสดง</label>
+              <input name="sort_order" type="number" x-model="post.sort_order">
+            </div>
+          </div>
+          <label class="check">
+            <input type="checkbox" name="active" value="1" x-model="post.active">
+            <span>เปิดใช้งาน (ปิดแล้วจะไม่ถูกนับว่าขาดคน และไม่ขึ้นในแถบพนักงาน)</span>
+          </label>
+        </div>
+        <div class="modal-foot">
+          <button class="btn" type="button" x-on:click="postOpen = false">ยกเลิก</button>
+          <button class="btn btn-primary" type="submit">บันทึก</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</template>
+
+{# ── ฟอร์มคนประจำ / คนแทน (ฟอร์มเดียว ต่างกันที่ช่อง "แทนใคร") ── #}
+<template x-if="assignOpen">
+  <div>
+    <div class="modal-scrim" x-on:click="assignOpen = false"></div>
+    <div class="modal">
+      <form method="post" action="/duty/assign/save">
+        <div class="modal-head">
+          <h3 x-text="assign.id ? (mode === 'cover' ? 'แก้ไขคนแทน' : 'แก้ไขคนประจำ')
+                                : (mode === 'cover' ? 'ระบุคนแทน' : 'เพิ่มคนประจำ')"></h3>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" name="id" :value="assign.id">
+          <input type="hidden" name="next" value="{{ next_url if asked else '/duty' }}">
+          <div class="form-grid">
+            <div class="field">
+              <label>จุดงาน *</label>
+              <select name="post_id" x-model="assign.post_id" required>
+                <option value="">— เลือก —</option>
+                {% for p in posts if p.active %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="field">
+              <label x-text="mode === 'cover' ? 'คนที่มาแทน *' : 'พนักงาน *'"></label>
+              <select name="staff_id" x-model="assign.staff_id" required>
+                <option value="">— เลือก —</option>
+                {% for s in staff %}
+                <option value="{{ s.id }}">{{ s.name }}{{ ' · ' ~ s.department_name if s.department_name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="field" x-show="mode === 'cover'">
+            <label>แทนใคร</label>
+            <select name="covers_staff_id" x-model="assign.covers_staff_id" :disabled="mode !== 'cover'">
+              <option value="">ไม่ระบุ (มาเสริม)</option>
+              {% for s in staff %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}
+            </select>
+            <div class="hint">คนแทนที่ลาอยู่ในช่วงนั้นระบบจะไม่รับ</div>
+          </div>
+          <div class="form-grid">
+            <div class="field">
+              <label>ตั้งแต่วันที่ *</label>
+              <input name="starts_on" type="date" x-model="assign.starts_on" required>
+            </div>
+            <div class="field">
+              <label x-text="mode === 'cover' ? 'ถึงวันที่' : 'ถึงวันที่ (เว้นว่าง = ไม่มีกำหนด)'"></label>
+              <input name="ends_on" type="date" x-model="assign.ends_on" :min="assign.starts_on">
+            </div>
+          </div>
+          <div class="field">
+            <label>หมายเหตุ</label>
+            <input name="note" x-model="assign.note" maxlength="200">
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn" type="button" x-on:click="assignOpen = false">ยกเลิก</button>
+          <button class="btn btn-primary" type="submit">บันทึก</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</template>
+
+{# ── จบการประจำ ── #}
+<template x-if="endOpen">
+  <div>
+    <div class="modal-scrim" x-on:click="endOpen = false"></div>
+    <div class="modal">
+      <form method="post" :action="'/duty/assign/' + end.id + '/end'">
+        <div class="modal-head"><h3>จบการประจำของ <span x-text="end.name"></span></h3></div>
+        <div class="modal-body">
+          <div class="field">
+            <label>วันสุดท้ายที่ประจำจุดนี้ *</label>
+            <input name="ends_on" type="date" x-model="end.ends_on" required>
+            <div class="hint">ใช้ตอนย้ายไปจุดอื่นหรือลาออก · ประวัติว่าเคยประจำที่นี่จะยังอยู่</div>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn" type="button" x-on:click="endOpen = false">ยกเลิก</button>
+          <button class="btn btn-primary" type="submit">บันทึก</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</template>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function dutyPage(data) {
+  return {
+    blankPost: data.blankPost, blankAssign: data.blankAssign,
+    postOpen: false, post: { ...data.blankPost },
+    assignOpen: false, assign: { ...data.blankAssign }, mode: 'regular',
+    endOpen: false, end: { id: '', name: '', ends_on: '' },
+    openPost(p) { this.post = { ...p }; this.postOpen = true; },
+    openAssign(a, mode) { this.assign = { ...a }; this.mode = mode; this.assignOpen = true; },
+    openEnd(e) { this.end = { ...e }; this.endOpen = true; },
+  };
+}
+</script>
+{% endblock %}

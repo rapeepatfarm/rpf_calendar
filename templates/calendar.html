@@ -29,6 +29,7 @@
        staff: {{ (staff_json or []) | tojson }},
        leaves: {{ (leaves_json or []) | tojson }},
        dayLabels: {{ (day_labels or {}) | tojson }},
+       duty: {{ (duty_json or {}) | tojson }},
        canManage: {{ "true" if can_manage else "false" }},
        tab: "{{ tab }}",
        selected: "{{ selected }}",
@@ -66,6 +67,10 @@
                x-on:keydown.enter="pickDay('{{ day.date }}')">
             <span class="cal-num">{{ day.date.day }}</span>
             {% if day.more %}<span class="cal-more">+{{ day.more }}</span>{% endif %}
+            {# มุมแดง = จุดงานขาดคนและยังไม่มีคนแทน (§29.4) — แถบลาบอกว่าใครลา แต่ไม่ได้บอกว่าจุดมีคนพอไหม #}
+            {% if short_days and day.date.isoformat() in short_days %}
+            <span class="cal-short" title="ขาดคน: {{ short_days[day.date.isoformat()] }}"></span>
+            {% endif %}
           </div>
           {% endfor %}
         </div>
@@ -112,6 +117,7 @@
     <div class="hint cal-legend">
       แถบสีคือประเภทกิจกรรม · แถบที่ลากยาวคือกิจกรรมหลายวัน · พื้นแดงคืองานที่เลยกำหนดแล้ว
       ยังไม่ได้เริ่ม · แถบลายทแยง "ลา …" คือพนักงานลา แตะแล้วดูว่าวันนั้นใครลา/ใครมาในแถบ "พนักงาน"
+      · มุมแดงที่วัน = มีจุดงานขาดคนและยังไม่มีคนแทน
     </div>
   </div>
 
@@ -191,15 +197,52 @@
           </template>
         </div>
 
+        {# ── ประจำจุดงาน (เฟส C) — มีเมื่อสร้างจุดงานไว้แล้ว ── #}
+        <template x-if="dayPosts.length">
+          <div class="staff-sec">
+            <div class="staff-sec-head">
+              <span>ประจำจุดงาน</span>
+              <span class="panel-tab-n late" x-show="shortPosts.length"
+                    x-text="'ขาด ' + shortPosts.length + ' จุด'"></span>
+            </div>
+            <template x-for="p in dayPosts" :key="p.id">
+              <div class="staff-post" :class="{ 'short': p.short }">
+                <div class="staff-post-head">
+                  <span x-text="p.name"></span>
+                  <span class="n" :class="{ 'short': p.short }"
+                        x-text="p.short ? ('ขาด ' + (p.need - p.have) + ' · มี ' + p.have + '/' + p.need)
+                                        : (p.have + '/' + p.need + ' คน')"></span>
+                </div>
+                <div class="chip-list">
+                  <template x-for="s in p.present" :key="'p' + s.id">
+                    <span class="chip"><i class="swatch" :style="'background:' + s.color"></i><span x-text="s.name"></span></span>
+                  </template>
+                  <template x-for="s in p.covering" :key="'c' + s.id">
+                    <span class="chip cover" :title="'มาแทน ' + s.for">
+                      <i class="swatch" :style="'background:' + s.color"></i>
+                      <span x-text="s.name + (s.for ? ' (แทน ' + s.for + ')' : ' (เสริม)')"></span>
+                    </span>
+                  </template>
+                  <template x-for="s in p.absent" :key="'a' + s.id">
+                    <span class="chip away" title="ลา"><i class="swatch" :style="'background:' + s.color"></i><span x-text="s.name + ' · ลา'"></span></span>
+                  </template>
+                </div>
+              </div>
+            </template>
+            <a class="btn btn-sm" x-show="canManage && shortPosts.length" href="/duty"
+               style="margin-top:4px">ไปหน้าหน้าที่ประจำเพื่อระบุคนแทน</a>
+          </div>
+        </template>
+
         <div class="staff-sec">
           <div class="staff-sec-head">
-            <span>มาทำงาน</span>
-            <span class="panel-tab-n" x-text="dayPresent.length + ' คน'"></span>
+            <span x-text="dayPosts.length ? 'ว่าง' : 'มาทำงาน'"></span>
+            <span class="panel-tab-n" x-text="dayFree.length + ' คน'"></span>
           </div>
-          <template x-if="dayPresent.length === 0">
-            <div class="staff-empty">ไม่มีพนักงานในทะเบียน</div>
+          <template x-if="dayFree.length === 0">
+            <div class="staff-empty" x-text="dayPosts.length ? 'ไม่มีใครว่าง — ทุกคนประจำจุดหรือลา' : 'ไม่มีพนักงานในทะเบียน'"></div>
           </template>
-          <template x-for="g in presentGroups" :key="g.name">
+          <template x-for="g in freeGroups" :key="g.name">
             <div class="staff-group">
               <div class="staff-group-name" x-text="g.name"></div>
               <div class="chip-list">

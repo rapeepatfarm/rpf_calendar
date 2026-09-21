@@ -13,7 +13,7 @@ from config import (BASE_DIR, ONLINE, SESSION_HTTPS_ONLY, SESSION_MAX_AGE,
                     SESSION_SECRET, check_session_secret)
 from database import close_pool, init_pool
 from routers import sync_admin
-from routers import (activities, calendar, history, leaves, master, next_work, plans,
+from routers import (activities, calendar, duty, history, leaves, master, next_work, plans,
                      users)
 from routers import auth as auth_router
 from services.scheduler import scheduler
@@ -62,6 +62,7 @@ app.include_router(history.router)        # prefix /history
 app.include_router(activities.router)   # prefix /activities มาในไฟล์เองแล้ว
 app.include_router(master.router)       # prefix /master
 app.include_router(leaves.router)       # prefix /leaves (v2 เฟส B)
+app.include_router(duty.router)         # prefix /duty (v2 เฟส C)
 app.include_router(users.router)        # prefix /settings/users
 app.include_router(sync_admin.router)   # prefix /settings/sync
 

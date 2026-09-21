@@ -12,7 +12,7 @@ from config import BASE_DIR
 from database import fetchone, get_conn
 from auth import ROLE_LABELS
 from services import activities as act
-from services import thaidate
+from services import staffing, thaidate
 from sync.sources import SYSTEM_LABELS
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
@@ -147,7 +147,19 @@ def page(request: Request, user: dict, name: str, conn=None, **ctx) -> HTMLRespo
     base["back_label"] = request.session.get("back_label", MAIN_PAGES["/calendar"])
     if conn is not None:
         base["overdue_n"] = overdue_count(conn)
+        base["duty_short_n"] = _duty_short_count(conn, user)
     else:
         with get_conn() as c:
             base["overdue_n"] = overdue_count(c)
+            base["duty_short_n"] = _duty_short_count(c, user)
     return templates.TemplateResponse(name, {**base, **ctx})
+
+
+def _duty_short_count(conn, user: dict) -> int:
+    """ป้ายเลข "จุดที่จะขาดคน" ข้างเมนูหน้าที่ประจำ — เฉพาะคนที่เห็นเมนูนั้น (manager ขึ้นไป)
+
+    ตารางเล็ก (จุดงานไม่กี่จุด × 30 วัน) จึงคำนวณสดทุกหน้าได้เหมือนป้ายงานค้าง
+    """
+    if user.get("role") not in ("admin", "manager"):
+        return 0
+    return staffing.shortfall_post_count(conn)
