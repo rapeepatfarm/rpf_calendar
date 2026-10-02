@@ -25,7 +25,8 @@
 
 {% block content %}
 <div x-data='dutyPage({ blankPost: {{ blank_post | tojson }}, blankAssign: {{ blank_assign | tojson }},
-                       staffGroups: {{ (staff_groups or []) | tojson }} })'
+                       staffGroups: {{ (staff_groups or []) | tojson }},
+                       postMembers: {{ (post_members or {}) | tojson }} })'
      x-on:open-post.window="openPost(blankPost)">
 
 {# ── การลาที่เพิ่งบันทึก → กระทบจุดไหน (§29.6 ถามหาคนแทนตอนบันทึกลา) ── #}
@@ -292,7 +293,7 @@
             <label x-text="mode === 'cover' ? 'คนที่มาแทน *' : 'พนักงาน *'"></label>
             <select name="staff_id" x-model="assign.staff_id" required>
               <option value="">— เลือก —</option>
-              <template x-for="g in visibleGroups" :key="g.id">
+              <template x-for="g in visibleGroups()" :key="g.id">
                 <optgroup :label="g.name">
                   <template x-for="s in g.staff" :key="s.id">
                     <option :value="String(s.id)" x-text="s.name"></option>
@@ -300,7 +301,13 @@
                 </optgroup>
               </template>
             </select>
-            <div class="hint" x-show="dept" x-text="'แสดงเฉพาะฝ่ายที่เลือก — ' + visibleCount + ' คน'"></div>
+            <div class="hint" x-show="dept || hiddenCount()"
+                 x-text="(dept ? 'แสดงเฉพาะฝ่ายที่เลือก — ' + visibleCount() + ' คน' : '')
+                       + (dept && hiddenCount() ? ' · ' : '')
+                       + (hiddenCount() ? 'ซ่อนคนที่ประจำจุดนี้อยู่แล้ว ' + hiddenCount() + ' คน' : '')"></div>
+            <div class="hint" x-show="visibleCount() === 0" style="color:var(--warn)">
+              ไม่เหลือใครให้เลือก — ทุกคนในรายการนี้ประจำจุดนี้อยู่แล้ว หรือถูกตัวกรองฝ่ายกรองออก
+            </div>
           </div>
           <div class="field" x-show="mode === 'cover'">
             <label>แทนใคร</label>
@@ -361,46 +368,52 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ asset('js/staffpicker.js') }}"></script>
 <script>
 function dutyPage(data) {
   return {
+    ...staffPicker(data.staffGroups),
     blankPost: data.blankPost, blankAssign: data.blankAssign,
-    staffGroups: data.staffGroups || [],
+    postMembers: data.postMembers || {},
     postOpen: false, post: { ...data.blankPost },
     assignOpen: false, assign: { ...data.blankAssign }, mode: 'regular',
-    dept: '',                       // ตัวกรองฝ่ายในฟอร์ม — ไม่ถูกส่งไปกับฟอร์ม
     endOpen: false, end: { id: '', name: '', ends_on: '' },
 
-    get visibleGroups() {
-      return this.dept ? this.staffGroups.filter(g => String(g.id) === this.dept) : this.staffGroups;
+    /** ซ่อนคนที่เป็นคนประจำจุดนี้อยู่แล้ว — ทั้งตอนเพิ่มคนประจำและตอนหาคนแทน
+     *
+     *  โหมดคนประจำ: ใส่ซ้ำไม่ได้อยู่แล้ว (เซิร์ฟเวอร์ปฏิเสธ) ซ่อนไว้จะได้ไม่ต้องไปเจอ error
+     *  โหมดคนแทน: คนที่อยู่ประจำตรงนั้นแล้วมาเป็น "คนแทน" ของจุดเดียวกันไม่ได้
+     *             เพราะระบบนับคนประจำกับคนแทนแยกกัน จะกลายเป็นนับคนเดียวสองรอบ
+     *  ยกเว้นแถวที่กำลังแก้อยู่ ไม่งั้นแก้ของตัวเองแล้วชื่อตัวเองหาย
+     */
+    hidden() {
+      const ids = this.postMembers[String(this.assign.post_id)] || [];
+      return ids.filter(id => String(id) !== String(this.editingStaffId));
     },
 
-    get visibleCount() {
-      return this.visibleGroups.reduce((n, g) => n + g.staff.length, 0);
-    },
+    editingStaffId: '',
 
     openPost(p) { this.post = { ...p }; this.postOpen = true; },
 
     /** เปิดฟอร์มมอบหมาย — ล้างตัวกรองทุกครั้ง
      *  ไม่งั้นเปิดครั้งถัดไปแล้วคนที่เลือกไว้หายจากลิสต์เพราะตัวกรองเก่าค้างอยู่ */
     openAssign(a, mode) {
-      this.assign = { ...a };
+      this.assign = { ...a, staff_id: '' };
       this.mode = mode;
       this.dept = '';
+      // ตอนแก้ไข ชื่อคนเดิมต้องไม่ถูกซ่อน แม้เขาจะ "ประจำจุดนี้อยู่แล้ว" ก็ตาม
+      this.editingStaffId = a.id ? a.staff_id : '';
       this.assignOpen = true;
+      this.applySelection(a.staff_id, v => { this.assign.staff_id = v; });
     },
 
     openEnd(e) { this.end = { ...e }; this.endOpen = true; },
 
     init() {
-      // เปลี่ยนฝ่ายแล้วคนที่เลือกไว้หลุดจากลิสต์ ต้องล้างค่าด้วย ไม่งั้นหน้าจอโชว์ว่าง
-      // แต่ค่าเดิมยังติดไปกับฟอร์ม แล้วบันทึกคนผิดโดยไม่มีใครรู้
-      this.$watch('dept', () => {
-        const ids = this.visibleGroups.flatMap(g => g.staff.map(s => String(s.id)));
-        if (this.assign.staff_id && !ids.includes(String(this.assign.staff_id))) {
-          this.assign.staff_id = '';
-        }
-      });
+      const prune = () => this.pruneSelection(this.assign.staff_id,
+                                              () => { this.assign.staff_id = ''; });
+      this.$watch('dept', prune);
+      this.$watch('assign.post_id', prune);     // เปลี่ยนจุดงานแล้วคนที่ประจำจุดใหม่ต้องหาย
     },
   };
 }

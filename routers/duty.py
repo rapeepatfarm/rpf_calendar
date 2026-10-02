@@ -94,6 +94,8 @@ def duty_page(request: Request, department_id: OptInt = None, all: str = "",
                     staff=staff_rows,
                     # จัดกลุ่มตามฝ่ายให้ฟอร์มกรองได้ (ผู้ใช้ขอ 2026-10-02 — คนเยอะแล้วหายาก)
                     staff_groups=staffing.staff_groups(staff_rows),
+                    # ใครประจำจุดไหนอยู่แล้ว — ฟอร์มใช้ซ่อนชื่อ จะได้ไม่เลือกซ้ำ
+                    post_members=staffing.post_members(conn),
                     departments=fetchall(conn, "SELECT id, name FROM departments WHERE active "
                                                "ORDER BY sort_order, name"),
                     flt={"department_id": department_id}, show_all=all == "1",

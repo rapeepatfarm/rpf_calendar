@@ -332,6 +332,34 @@ def staff_groups(rows: list[dict]) -> list[dict]:
     return groups
 
 
+def leave_ranges(conn, start: date, end: date) -> dict[int, list[dict]]:
+    """ช่วงวันลาของแต่ละคนในหน้าต่างที่สนใจ — ให้ฟอร์มซ่อนคนที่ลาคาบช่วงที่กำลังกรอก
+
+    ซ่อนบนหน้าจอเฉยๆ ส่วนการกันจริงยังอยู่ที่ `validate()` (ยิง POST ตรงได้)
+    """
+    out: dict[int, list[dict]] = {}
+    for l in between(conn, start, end):
+        out.setdefault(l["staff_id"], []).append({
+            "id": l["id"], "from": l["date_from"].isoformat(), "to": l["date_to"].isoformat()})
+    return out
+
+
+def post_members(conn, today: date | None = None) -> dict[str, list[int]]:
+    """ใครเป็น "คนประจำ" ของแต่ละจุดอยู่แล้วบ้าง (ที่ยังไม่จบ) — คีย์เป็น str ให้ JS ใช้ตรงๆ
+
+    ฟอร์มใช้ซ่อนชื่อคนที่ถูกเลือกไปแล้ว จะได้ไม่เลือกซ้ำแล้วไปเจอ error ตอนกดบันทึก
+    """
+    today = today or thaidate.today()
+    out: dict[str, list[int]] = {}
+    for row in fetchall(conn, """
+        SELECT post_id, staff_id FROM duty_assignments
+         WHERE NOT is_deleted AND covers_staff_id IS NULL
+           AND (ends_on IS NULL OR ends_on >= %s)
+    """, (today,)):
+        out.setdefault(str(row["post_id"]), []).append(row["staff_id"])
+    return out
+
+
 def load_roster_inputs(conn, start: date, end: date) -> dict:
     """ดึงทุกอย่างที่ตัวคำนวณล้วนต้องใช้สำหรับช่วง [start, end] ในครั้งเดียว"""
     return {
@@ -554,6 +582,18 @@ def validate_assignment(conn, data: dict, exclude_id: int | None = None) -> str 
             l = clash[0]
             return (f"{staff['name']} ลาช่วง {thaidate.span(l['date_from'], l['date_to'])} "
                     "จึงมาแทนช่วงนี้ไม่ได้")
+
+        # คนประจำจุดนั้นอยู่แล้วมาเป็น "คนแทน" ของจุดเดียวกันไม่ได้ — เขาอยู่ตรงนั้นอยู่แล้ว
+        # และ roster_for_day() นับ present + covering แยกกัน จะกลายเป็นนับคนเดียวสองรอบ
+        # แล้วจุดที่ขาดคนจริงจะดูเหมือนครบ
+        already = fetchone(conn, _ASSIGN_SELECT + """
+            AND a.post_id = %s AND a.staff_id = %s AND a.covers_staff_id IS NULL
+            AND a.starts_on <= %s AND (a.ends_on IS NULL OR a.ends_on >= %s)
+            LIMIT 1
+        """, (data["post_id"], data["staff_id"], check_end, data["starts_on"]))
+        if already:
+            return (f"{staff['name']} เป็นคนประจำ {already['post_name']} อยู่แล้ว "
+                    "จึงไม่ต้องใส่เป็นคนแทนของจุดเดียวกัน")
         return None
 
     sql = _ASSIGN_SELECT + """

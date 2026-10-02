@@ -11,7 +11,12 @@
 {% endblock %}
 
 {% block content %}
-<div x-data='{ editing: {{ "true" if open_add else "false" }}, f: {{ blank | tojson }} }'>
+<div x-data='leavePage({
+       editing: {{ "true" if open_add else "false" }},
+       blank: {{ blank | tojson }},
+       staffGroups: {{ (staff_groups or []) | tojson }},
+       leaveRanges: {{ (leave_ranges or {}) | tojson }}
+     })'>
 
 {% macro leave_rows(rows, empty_text) %}
   {% for r in rows %}
@@ -33,10 +38,10 @@
     <td class="faint" style="max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap"
         title="{{ r.note }}">{{ r.note }}</td>
     <td class="row-actions">
-      <button class="btn btn-sm" x-on:click='f = {{ {
+      <button class="btn btn-sm" x-on:click='openForm({{ {
         'id': r.id, 'staff_id': r.staff_id, 'leave_type_id': r.leave_type_id or '',
         'date_from': r.date_from.isoformat(), 'date_to': r.date_to.isoformat(),
-        'part': r.part, 'note': r.note } | tojson }}; editing = true'>แก้ไข</button>
+        'part': r.part, 'note': r.note } | tojson }})'>แก้ไข</button>
       <form method="post" action="/leaves/{{ r.id }}/delete" style="display:inline"
             onsubmit="return confirm('ลบการลาของ {{ r.staff_name }} {{ d_span(r.date_from, r.date_to) }}?')">
         <input type="hidden" name="f_staff_id" value="{{ flt.staff_id or '' }}">
@@ -74,7 +79,7 @@
     <div class="spacer"></div>
     <a class="btn btn-sm" href="/master/leave-types">ประเภทการลา</a>
     <button class="btn btn-primary btn-sm"
-            x-on:click='f = {{ blank | tojson }}; editing = true'>+ บันทึกการลา</button>
+            x-on:click='openForm({{ blank | tojson }})'>+ บันทึกการลา</button>
   </div>
   <div class="card-body tight">
     <div class="table-scroll">
@@ -132,13 +137,15 @@
           <input type="hidden" name="f_staff_id" value="{{ flt.staff_id or '' }}">
           <input type="hidden" name="f_department_id" value="{{ flt.department_id or '' }}">
           <div class="form-grid">
+            {# กรองฝ่ายก่อนเลือกคน — แบบเดียวกับฟอร์มหน้าที่ประจำ
+               ตัวกรองนี้ไม่มี name จึงไม่ถูกส่งไปกับฟอร์ม เป็นตัวช่วยค้นบนหน้าจอเท่านั้น #}
             <div class="field">
-              <label>พนักงาน *</label>
-              <select name="staff_id" x-model="f.staff_id" required>
-                <option value="">— เลือก —</option>
-                {% for s in staff %}
-                <option value="{{ s.id }}">{{ s.name }}{{ ' · ' ~ s.department_name if s.department_name }}</option>
-                {% endfor %}
+              <label>กรองตามฝ่าย</label>
+              <select x-model="dept">
+                <option value="">ทุกฝ่าย</option>
+                <template x-for="g in staffGroups" :key="g.id">
+                  <option :value="String(g.id)" x-text="g.name + ' (' + g.staff.length + ')'"></option>
+                </template>
               </select>
             </div>
             <div class="field">
@@ -149,6 +156,27 @@
                 <option value="{{ t.id }}">{{ t.name }}</option>
                 {% endfor %}
               </select>
+            </div>
+          </div>
+          <div class="field">
+            <label>พนักงาน *</label>
+            <select name="staff_id" x-model="f.staff_id" required>
+              <option value="">— เลือก —</option>
+              <template x-for="g in visibleGroups()" :key="g.id">
+                <optgroup :label="g.name">
+                  <template x-for="s in g.staff" :key="s.id">
+                    <option :value="String(s.id)" x-text="s.name"></option>
+                  </template>
+                </optgroup>
+              </template>
+            </select>
+            <div class="hint" x-show="dept || hiddenCount()"
+                 x-text="(dept ? 'แสดงเฉพาะฝ่ายที่เลือก — ' + visibleCount() + ' คน' : '')
+                       + (dept && hiddenCount() ? ' · ' : '')
+                       + (hiddenCount() ? 'ซ่อนคนที่มีวันลาคาบช่วงนี้แล้ว ' + hiddenCount() + ' คน' : '')"></div>
+            <div class="hint" x-show="visibleCount() === 0" style="color:var(--warn)">
+              ไม่เหลือใครให้เลือก — ทุกคนมีวันลาคาบช่วงนี้อยู่แล้ว หรือถูกตัวกรองฝ่ายกรองออก
+              · ถ้าจะแก้ของเดิมให้กดปุ่มแก้ไขที่รายการนั้นแทน
             </div>
           </div>
           <div class="form-grid">
@@ -188,4 +216,52 @@
 </template>
 
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ asset('js/staffpicker.js') }}"></script>
+<script>
+function leavePage(data) {
+  return {
+    ...staffPicker(data.staffGroups),
+    blank: data.blank,
+    f: { ...data.blank },
+    editing: !!data.editing,
+    leaveRanges: data.leaveRanges || {},
+
+    /** ซ่อนคนที่มีวันลาคาบช่วงที่กำลังกรอกอยู่แล้ว — จะได้ไม่เลือกซ้ำ
+     *
+     *  คนเดียวลาซ้อนช่วงกันไม่ได้ (เซิร์ฟเวอร์ปฏิเสธใน staffing.validate) ซ่อนไว้ก่อน
+     *  จะได้ไม่ต้องกรอกจนจบแล้วค่อยไปเจอ error
+     *  · ตอนแก้ไขต้องไม่เอารายการของตัวเองมานับ ไม่งั้นแก้ของตัวเองแล้วชื่อตัวเองหาย
+     */
+    hidden() {
+      const from = this.f.date_from;
+      if (!from) return [];
+      const to = this.f.date_to || from;
+      return Object.entries(this.leaveRanges)
+        .filter(([, rows]) => rows.some(r => String(r.id) !== String(this.f.id)
+                                             && overlapsIso(from, to, r.from, r.to)))
+        .map(([staffId]) => staffId);
+    },
+
+    /** เปิดฟอร์ม — ล้างตัวกรองฝ่ายทุกครั้ง ไม่ให้ตัวกรองเก่าค้างแล้วหาชื่อไม่เจอ */
+    openForm(row) {
+      this.f = { ...row, staff_id: '' };
+      this.dept = '';
+      this.editing = true;
+      this.applySelection(row.staff_id, v => { this.f.staff_id = v; });
+    },
+
+    init() {
+      // เปลี่ยนฝ่ายหรือเปลี่ยนวันแล้วคนที่เลือกไว้อาจหลุดจากลิสต์ ต้องล้างค่าด้วย
+      // ไม่งั้นหน้าจอโชว์ว่างแต่ค่าเดิมยังติดไปกับฟอร์ม แล้วบันทึกคนผิดโดยไม่มีใครรู้
+      const prune = () => this.pruneSelection(this.f.staff_id, () => { this.f.staff_id = ''; });
+      this.$watch('dept', prune);
+      this.$watch('f.date_from', prune);
+      this.$watch('f.date_to', prune);
+    },
+  };
+}
+</script>
 {% endblock %}

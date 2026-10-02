@@ -5,6 +5,7 @@
 
 ตรรกะทั้งหมด (ตรวจซ้อน ครึ่งวัน) อยู่ใน services/staffing.py — ที่นี่แค่รับฟอร์มและเด้งกลับ
 """
+from datetime import timedelta
 from urllib.parse import quote, urlencode
 
 from fastapi import APIRouter, Form, Request
@@ -41,13 +42,16 @@ def _redirect(target: str, ok: str = "", err: str = "", keep: dict | None = None
 
 
 def _master(conn) -> dict:
+    staff = staffing.active_staff(conn)
+    today = thaidate.today()
     return {
-        "staff": fetchall(conn, """
-            SELECT s.id, s.name, s.color, s.code, d.name AS department_name
-              FROM staff s LEFT JOIN departments d ON d.id = s.department_id
-             WHERE s.active
-             ORDER BY d.sort_order NULLS LAST, d.name, s.sort_order, s.name
-        """),
+        "staff": staff,
+        # จัดกลุ่มตามฝ่ายให้ฟอร์มกรองได้ (แบบเดียวกับฟอร์มหน้าที่ประจำ)
+        "staff_groups": staffing.staff_groups(staff),
+        # ช่วงวันลาที่มีอยู่แล้วของแต่ละคน — ฟอร์มใช้ซ่อนคนที่ลาคาบช่วงที่กำลังกรอก
+        # มองย้อนหลังพอให้แก้ของเก่าได้ และไปข้างหน้าพอกับที่คนวางแผนลากันจริง
+        "leave_ranges": staffing.leave_ranges(conn, today - timedelta(days=staffing.PAST_DAYS),
+                                              today + timedelta(days=400)),
         "departments": fetchall(conn, "SELECT id, name FROM departments WHERE active "
                                       "ORDER BY sort_order, name"),
         "leave_types": fetchall(conn, "SELECT id, name, color FROM leave_types WHERE active "
