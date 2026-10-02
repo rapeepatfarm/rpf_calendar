@@ -179,7 +179,7 @@
 {% endmacro %}
 
 
-{# รายชื่อผู้ช่วย — แสดงเฉพาะเมื่อมี #}
+{# รายชื่อผู้ปฏิบัติงาน (activity_helpers) — แสดงเฉพาะเมื่อมี #}
 {% macro helper_names(a) %}
   {%- if a.helper_names -%}
   <span class="bit">👥 +{{ a.helper_names | join(', ') }}</span>

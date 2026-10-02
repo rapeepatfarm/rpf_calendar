@@ -213,6 +213,42 @@ def test_free_staff_excludes_both_leave_and_assigned():
     assert [s["id"] for s in free] == [14]
 
 
+def act(id, title="Test", start="2026-09-20", end=None, status="in_progress"):
+    return {"id": id, "title": title, "status": status,
+            "from": start, "to": end or start}
+
+
+def test_someone_assigned_to_an_activity_is_not_free():
+    """เจอจริง 2026-10-02: งาน "Test" กดเริ่มแล้ว แต่ผู้ปฏิบัติงานยังขึ้นว่าว่าง
+
+    ของเดิมหักแค่ลากับจุดงาน — กิจกรรมก็กินเวลาคนเหมือนกัน
+    """
+    staff = [person(11), person(12)]
+    activities = {11: [act(100)]}
+    free = staffing.free_on(staff, [], [], D, activities)
+    assert [s["id"] for s in free] == [12]
+
+
+def test_an_activity_only_blocks_the_days_it_covers():
+    staff = [person(11)]
+    activities = {11: [act(100, start="2026-09-18", end="2026-09-19")]}
+    assert staffing.free_on(staff, [], [], D, activities) == staff
+    assert staffing.free_on(staff, [], [], date(2026, 9, 19), activities) == []
+
+
+def test_working_on_lists_every_activity_covering_the_day():
+    activities = {11: [act(100, "งานเช้า"), act(101, "งานบ่าย")], 12: [act(102, start="2026-09-25")]}
+    got = staffing.working_on(activities, D)
+    assert sorted(got) == [11]
+    assert [a["title"] for a in got[11]] == ["งานเช้า", "งานบ่าย"]
+
+
+def test_free_on_without_activity_data_behaves_like_before():
+    """เรียกแบบไม่ส่งกิจกรรม (ช่วงรอรีสตาร์ต / ที่เรียกเก่า) ต้องไม่พัง"""
+    staff = [person(11)]
+    assert staffing.free_on(staff, [], [], D) == staff
+
+
 def test_shortfalls_merge_consecutive_days_into_one_range():
     rows = [assign(1, 1, 11, "2026-01-01"), assign(2, 1, 12, "2026-01-01")]
     leaves = [leave(1, 11, "2026-09-20", "2026-09-22")]

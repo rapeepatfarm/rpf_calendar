@@ -13,6 +13,7 @@ from auth import (can_create, can_edit_activity, can_manage, can_run_activity,
 from database import fetchall, get_conn
 from forms import as_bool, as_date, as_int, as_priority, as_text, as_time
 from services import activities as act
+from services import staffing
 from services import thaidate
 from view import page
 
@@ -52,9 +53,24 @@ def _master(conn) -> dict:
     cats = fetchall(conn, "SELECT id, name, color, default_priority, "
                           "default_duration_min, needs_start FROM activity_categories "
                           "WHERE active ORDER BY sort_order, name")
+    # v2 เฟส D: ทะเบียนมาพร้อมฝ่าย ให้ฟอร์มจัดกลุ่มและ "เลือกทั้งฝ่าย" ได้
+    # + ข้อมูลความว่าง (ลา/ประจำจุด/งานอื่น) ให้ฟอร์มติดป้ายต่อคนตามวันที่กรอก
+    staff = fetchall(conn, """
+        SELECT s.id, s.name, s.position, s.department_id, d.name AS department_name
+          FROM staff s LEFT JOIN departments d ON d.id = s.department_id
+         WHERE s.active
+         ORDER BY d.sort_order NULLS LAST, d.name, s.sort_order, s.name
+    """)
+    groups: list[dict] = []
+    for s in staff:
+        key = s["department_id"] or 0
+        if not groups or groups[-1]["id"] != key:
+            groups.append({"id": key, "name": s["department_name"] or "ยังไม่ระบุฝ่าย", "staff": []})
+        groups[-1]["staff"].append(s)
     return {
-        "staff": fetchall(conn, "SELECT id, name, position FROM staff "
-                                "WHERE active ORDER BY sort_order, name"),
+        "staff": staff,
+        "staff_groups": groups,
+        "availability": staffing.availability_data(conn),
         "categories": cats,
         # ค่าตั้งต้นของช่อง "ต้องกดเริ่มงานไหม" แยกตามประเภท ส่งไปให้ฟอร์มทั้งชุด
         # กุญแจเป็น string เพราะ <select> คืนค่าเป็น string เสมอ
@@ -89,6 +105,22 @@ def _helper_ids(form) -> list[int]:
     return [i for i in (as_int(v) for v in form.getlist("helper_ids")) if i]
 
 
+def _workers_problem(conn, data: dict, helper_ids: list[int]) -> str | None:
+    """ผู้ปฏิบัติงานที่ลาตลอดช่วงงาน เลือกไม่ได้ — กันที่นี่ด้วย ไม่ใช่แค่ปิดปุ่มบนจอ (§29.5)
+
+    ลาบางวัน/ประจำจุด/มีงานอื่น ฟอร์มแค่เตือน ที่นี่จึงไม่ปฏิเสธ
+    """
+    if not helper_ids or not data.get("planned_date"):
+        return None
+    end = data.get("planned_end_date") or data["planned_date"]
+    if end < data["planned_date"]:
+        end = data["planned_date"]
+    away = staffing.fully_on_leave(conn, helper_ids, data["planned_date"], end)
+    if away:
+        return f"{', '.join(away)} ลาตลอดช่วงงานนี้ จึงเป็นผู้ปฏิบัติงานไม่ได้ — เอาชื่อออกหรือเปลี่ยนวัน"
+    return None
+
+
 # ── สร้าง / แก้ไข ────────────────────────────────────────────
 
 @router.get("/new")
@@ -118,9 +150,13 @@ async def create(request: Request):
         data["assignee_id"] = user["staff_id"]
 
     with get_conn() as conn:
+        helpers = _helper_ids(form) if can_manage(user) else []
+        problem = _workers_problem(conn, data, helpers)
+        if problem:
+            return _redirect("/activities/new", err=problem)
         activity_id = act.create(conn, data, user)
         if can_manage(user):
-            act.set_helpers(conn, activity_id, _helper_ids(form))
+            act.set_helpers(conn, activity_id, helpers)
     return _redirect(f"/activities/{activity_id}", ok="สร้างกิจกรรมเรียบร้อยแล้ว")
 
 
@@ -151,9 +187,15 @@ async def edit(request: Request, activity_id: int):
         if not can_manage(user):
             data["assignee_id"] = activity["assignee_id"]
 
+        helpers = _helper_ids(form) if can_manage(user) else None
+        if helpers is not None:
+            problem = _workers_problem(conn, data, helpers)
+            if problem:
+                return _redirect(f"/activities/{activity_id}/edit", err=problem)
+
         act.update(conn, activity, data, user)
-        if can_manage(user):
-            act.set_helpers(conn, activity_id, _helper_ids(form))
+        if helpers is not None:
+            act.set_helpers(conn, activity_id, helpers)
     return _redirect(f"/activities/{activity_id}", ok="บันทึกการแก้ไขแล้ว")
 
 

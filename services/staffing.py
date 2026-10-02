@@ -8,7 +8,8 @@
     ลา(D)          staff_leaves ที่คาบวัน D (รวมครึ่งวัน)
     ประจำจุด(P,D)  duty_assignments ที่คาบวัน D (ทั้งประจำและคนแทน) − ลา(D)
     ขาดคน(P,D)     |ประจำจุด(P,D)| < required_n   (NULL = ต้องครบทุกคนประจำ)
-    ว่าง(D)        พนักงาน active − ลา(D) − ประจำจุดใดๆ(D)
+    มีกิจกรรม(D)   กิจกรรมที่คาบวัน D ซึ่งคนนั้นเป็นผู้รับผิดชอบหรือผู้ปฏิบัติงาน
+    ว่าง(D)        พนักงาน active − ลา(D) − ประจำจุดใดๆ(D) − มีกิจกรรม(D)
 
 ส่วนที่เป็นตรรกะล้วน (roster_for_day / free_on / shortfalls) รับ rows เข้ามาแล้วคำนวณ
 ทดสอบได้โดยไม่ต้องมี DB · ส่วนที่ต่อ DB คือตัวโหลด rows ให้
@@ -279,6 +280,33 @@ def assignments_between(conn, start: date, end: date, post_id: int | None = None
     return fetchall(conn, sql + _ASSIGN_ORDER, params)
 
 
+def activities_by_staff(conn, start: date, end: date) -> dict[int, list[dict]]:
+    """กิจกรรมที่คาบช่วง [start, end] แยกตามคน — ทั้งผู้รับผิดชอบหลักและผู้ปฏิบัติงาน
+
+    ที่เดียวสำหรับทั้ง "ว่างไหม" ในแถบพนักงาน และป้าย "มีงานอื่น" ในฟอร์มกิจกรรม
+    ไม่งั้นสองหน้าจะตอบไม่ตรงกัน
+
+    ตัด cancelled/missed ออก — ถอนแผนหรือไม่ได้ทำ แปลว่าไม่มีใครลงแรงกับมัน
+    ส่วน done ยังนับ เพราะย้อนดูวันที่ผ่านมาแล้วต้องเห็นว่าวันนั้นใครติดงานอะไร
+    """
+    out: dict[int, list[dict]] = {}
+    for r in fetchall(conn, """
+        SELECT a.id, a.title, a.status, a.planned_date, a.planned_end_date, x.staff_id
+          FROM activities a
+          JOIN LATERAL (
+                SELECT a.assignee_id AS staff_id
+                UNION SELECT h.staff_id FROM activity_helpers h WHERE h.activity_id = a.id
+          ) x ON x.staff_id IS NOT NULL
+         WHERE NOT a.is_deleted AND a.status NOT IN ('cancelled', 'missed')
+           AND a.planned_date <= %s AND a.planned_end_date >= %s
+         ORDER BY a.planned_date, a.id
+    """, (end, start)):
+        out.setdefault(r["staff_id"], []).append({
+            "id": r["id"], "title": r["title"], "status": r["status"],
+            "from": r["planned_date"].isoformat(), "to": r["planned_end_date"].isoformat()})
+    return out
+
+
 def active_staff(conn) -> list[dict]:
     return fetchall(conn, """
         SELECT s.id, s.name, s.color, s.code, s.department_id, d.name AS department_name
@@ -295,6 +323,7 @@ def load_roster_inputs(conn, start: date, end: date) -> dict:
         "assignments": assignments_between(conn, start, end),
         "leaves": between(conn, start, end),
         "staff": active_staff(conn),
+        "activities": activities_by_staff(conn, start, end),
     }
 
 
@@ -333,10 +362,27 @@ def roster_for_day(posts_: list[dict], assignments: list[dict], leaves: list[dic
     return result
 
 
-def free_on(staff: list[dict], assignments: list[dict], leaves: list[dict], day: date) -> list[dict]:
-    """คนที่ว่างจริงในวันนั้น — ไม่ลา และไม่ได้ประจำ/แทนที่จุดไหนเลย"""
+def working_on(activities: dict[int, list[dict]], day: date) -> dict[int, list[dict]]:
+    """กิจกรรมของแต่ละคนที่คาบวันนั้น — คีย์คือ staff_id (ว่างเปล่าแปลว่าไม่มีใครติดงาน)"""
+    iso = day.isoformat()
+    out = {}
+    for staff_id, rows in activities.items():
+        hit = [r for r in rows if r["from"] <= iso <= r["to"]]
+        if hit:
+            out[staff_id] = hit
+    return out
+
+
+def free_on(staff: list[dict], assignments: list[dict], leaves: list[dict], day: date,
+            activities: dict[int, list[dict]] | None = None) -> list[dict]:
+    """คนที่ว่างจริงในวันนั้น — ไม่ลา ไม่ได้ประจำ/แทนจุดไหน และ**ไม่มีกิจกรรมที่ถูกมอบหมาย**
+
+    ข้อสุดท้ายเพิ่มทีหลัง (2026-10-02) เพราะของเดิมหักแค่ลากับจุดงาน คนที่กำลังทำกิจกรรม
+    จึงยังขึ้นว่าว่าง ทั้งที่ไม่ว่าง — ผู้ใช้เจอจากงาน "Test" ที่กดเริ่มไปแล้ว
+    """
     away = {l["staff_id"] for l in leaves if l["date_from"] <= day <= l["date_to"]}
     busy = {a["staff_id"] for a in assignments if _covers_day(a, day)}
+    busy |= set(working_on(activities or {}, day))
     return [s for s in staff if s["id"] not in away and s["id"] not in busy]
 
 
@@ -403,6 +449,9 @@ def roster_range(conn, start: date, end: date) -> dict:
     day = start
     while day <= end:
         rows = roster_for_day(data["posts"], data["assignments"], data["leaves"], day)
+        # คนที่ติดกิจกรรมวันนั้น — คนลาไม่นับ (ลาแล้วก็คือไม่อยู่ ไม่ว่าจะมีงานค้างอยู่หรือไม่)
+        busy_today = working_on(data["activities"], day)
+        away_today = {l["staff_id"] for l in data["leaves"] if l["date_from"] <= day <= l["date_to"]}
         out[day.isoformat()] = {
             "posts": [{
                 "id": r["post"]["id"],
@@ -414,9 +463,16 @@ def roster_range(conn, start: date, end: date) -> dict:
                 "absent": [_person(a) for a in r["absent"]],
                 "covering": [{**_person(a), "for": a["covers_name"] or ""} for a in r["covering"]],
             } for r in rows if r["regular"] or r["covering"] or r["need"]],
+            "working": [{
+                "id": s["id"], "name": s["name"], "color": s["color"],
+                "department": s["department_name"] or "",
+                "activities": [{"id": a["id"], "title": a["title"], "status": a["status"]}
+                               for a in busy_today[s["id"]]],
+            } for s in data["staff"] if s["id"] in busy_today and s["id"] not in away_today],
             "free": [{"id": s["id"], "name": s["name"], "color": s["color"],
                       "department": s["department_name"] or ""}
-                     for s in free_on(data["staff"], data["assignments"], data["leaves"], day)],
+                     for s in free_on(data["staff"], data["assignments"], data["leaves"], day,
+                                      data["activities"])],
             "short": any(r["short"] for r in rows),
             "short_names": [r["post"]["name"] for r in rows if r["short"]],
         }
@@ -529,6 +585,69 @@ def end_assignment(conn, assignment_id: int, ends_on: date, user: dict) -> str |
     execute(conn, "UPDATE duty_assignments SET ends_on = %s, updated_at = NOW(), updated_by = %s "
                   "WHERE id = %s", (ends_on, user["id"], assignment_id))
     return None
+
+
+# ═══════════════════════════════════════════════════════════════
+#  ผู้ปฏิบัติงานในกิจกรรม (เฟส D) — ใครเลือกได้ ใครเลือกไม่ได้
+# ═══════════════════════════════════════════════════════════════
+#
+# §29.5 สองระดับ: ลา **ตลอดช่วงงาน** → ล็อกจริง (ทั้งหน้าจอและที่นี่) ·
+# ลาบางวัน / ประจำจุดงาน / มีงานอื่นวันเดียวกัน → เตือนแต่เลือกได้
+# ฟอร์มได้ข้อมูลดิบไปคำนวณป้ายเอง (วันงานเปลี่ยนได้ตอนกรอก) ส่วนการล็อกจริงตัดสินที่นี่
+
+# ฟอร์มมองย้อนหลัง/ไปข้างหน้ากี่วันเวลาดึงข้อมูลความว่าง — งานส่วนมากวางไม่เกินนี้
+AVAIL_BACK_DAYS = 30
+AVAIL_AHEAD_DAYS = 400
+
+
+def fully_on_leave(conn, staff_ids: list[int], start: date, end: date) -> list[str]:
+    """ชื่อคนที่ลา **ทุกวัน** ในช่วง [start, end] — คนพวกนี้เป็นผู้ปฏิบัติงานไม่ได้จริงๆ
+
+    ลาแค่บางวันไม่เข้าข่าย (ผู้ใช้ยืนยัน §29: ทีมยังทำวันที่เหลือได้)
+    """
+    if not staff_ids:
+        return []
+    rows = fetchall(conn, _SELECT + " AND l.staff_id = ANY(%s) AND l.date_from <= %s "
+                    "AND l.date_to >= %s" + _ORDER, (list(staff_ids), end, start))
+    days = {start + timedelta(days=i) for i in range((end - start).days + 1)}
+    covered: dict[int, set] = {}
+    names: dict[int, str] = {}
+    for l in rows:
+        names[l["staff_id"]] = l["staff_name"]
+        span = {l["date_from"] + timedelta(days=i)
+                for i in range((l["date_to"] - l["date_from"]).days + 1)}
+        covered.setdefault(l["staff_id"], set()).update(span & days)
+    return [names[sid] for sid, got in covered.items() if got >= days]
+
+
+def availability_data(conn, today: date | None = None) -> dict:
+    """ข้อมูลดิบให้ฟอร์มกิจกรรมคำนวณป้าย ลา/ประจำจุด/มีงานอื่น ต่อคน ตามวันที่กรอก
+
+    ส่งเป็นช่วง ISO ต่อคน (เล็กมาก) ให้ JS เทียบเอง — วันของงานเปลี่ยนได้ระหว่างกรอก
+    จึงยิงกลับเซิร์ฟเวอร์ทุกครั้งไม่คุ้ม · การล็อกจริงยังตัดสินที่ `fully_on_leave()`
+    """
+    today = today or thaidate.today()
+    since = today - timedelta(days=AVAIL_BACK_DAYS)
+    until = today + timedelta(days=AVAIL_AHEAD_DAYS)
+
+    leaves: dict[int, list] = {}
+    for l in between(conn, since, until):
+        leaves.setdefault(l["staff_id"], []).append({
+            "from": l["date_from"].isoformat(), "to": l["date_to"].isoformat(),
+            "part": l["part"]})
+
+    duty: dict[int, list] = {}
+    for a in assignments_between(conn, since, until):
+        if not a.get("staff_active", True):
+            continue
+        duty.setdefault(a["staff_id"], []).append({
+            "from": a["starts_on"].isoformat(),
+            "to": a["ends_on"].isoformat() if a["ends_on"] else "9999-12-31",
+            "post": a["post_name"]})
+
+    # งานอื่นที่คนนั้นถูกมอบหมายอยู่ — ตัวโหลดเดียวกับที่แถบพนักงานใช้ตัดสิน "ว่าง"
+    return {"leaves": leaves, "duty": duty,
+            "busy": activities_by_staff(conn, since, until)}
 
 
 def delete_assignment(conn, assignment_id: int, user: dict) -> None:

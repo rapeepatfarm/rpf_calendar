@@ -234,13 +234,33 @@
           </div>
         </template>
 
+        {# ── ติดกิจกรรม — คนที่ถูกมอบหมายงานในวันนั้น (ผู้รับผิดชอบหรือผู้ปฏิบัติงาน) ── #}
+        <template x-if="dayWorking.length">
+          <div class="staff-sec">
+            <div class="staff-sec-head">
+              <span>ติดกิจกรรม</span>
+              <span class="panel-tab-n" x-text="dayWorking.length + ' คน'"></span>
+            </div>
+            <template x-for="w in dayWorking" :key="'w' + w.id">
+              <div class="staff-work">
+                <i class="swatch" :style="'background:' + w.color"></i>
+                <span class="staff-work-main">
+                  <span class="staff-work-name" x-text="w.name"></span>
+                  <span class="staff-work-sub" x-text="w.activities.map(a => a.title).join(' · ')"></span>
+                </span>
+              </div>
+            </template>
+          </div>
+        </template>
+
         <div class="staff-sec">
           <div class="staff-sec-head">
-            <span x-text="dayPosts.length ? 'ว่าง' : 'มาทำงาน'"></span>
+            <span x-text="dayPosts.length || dayWorking.length ? 'ว่าง' : 'มาทำงาน'"></span>
             <span class="panel-tab-n" x-text="dayFree.length + ' คน'"></span>
           </div>
           <template x-if="dayFree.length === 0">
-            <div class="staff-empty" x-text="dayPosts.length ? 'ไม่มีใครว่าง — ทุกคนประจำจุดหรือลา' : 'ไม่มีพนักงานในทะเบียน'"></div>
+            <div class="staff-empty" x-text="dayPosts.length || dayWorking.length
+                  ? 'ไม่มีใครว่าง — ทุกคนประจำจุด ติดกิจกรรม หรือลา' : 'ไม่มีพนักงานในทะเบียน'"></div>
           </template>
           <template x-for="g in freeGroups" :key="g.name">
             <div class="staff-group">

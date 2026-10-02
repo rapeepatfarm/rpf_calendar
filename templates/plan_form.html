@@ -61,7 +61,7 @@
 
     {% if staff %}
     <div class="field" style="margin-top:14px; margin-bottom:0">
-      <label>ผู้ช่วยประจำแผนนี้ (เลือกได้หลายคน)</label>
+      <label>ผู้ปฏิบัติงานประจำแผนนี้ (เลือกได้หลายคน)</label>
       <div class="chip-picker">
         {% set chosen = series.helper_ids if editing and series.helper_ids else [] %}
         {% for s in staff %}

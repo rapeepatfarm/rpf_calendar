@@ -76,9 +76,15 @@ function calendarPage(data) {
       return this.dayPosts.filter(p => p.short);
     },
 
-    /** คนว่างจริง (ไม่ลา ไม่ประจำจุด) เมื่อมีจุดงาน · ถ้ายังไม่ได้ตั้งจุดงานเลย = ทุกคนที่ไม่ลา */
+    /** คนที่ติดกิจกรรมวันนั้น (ผู้รับผิดชอบหรือผู้ปฏิบัติงาน) */
+    get dayWorking() {
+      return this.dayDuty ? (this.dayDuty.working || []) : [];
+    },
+
+    /** คนว่างจริง = ไม่ลา ไม่ประจำจุด และไม่มีกิจกรรม — เซิร์ฟเวอร์คิดมาแล้ว (นิยามอยู่ที่เดียว)
+     *  ถอยไปใช้ "ทุกคนที่ไม่ลา" เฉพาะตอนที่ router ยังไม่ส่ง duty มา (ช่วงรอรีสตาร์ต) */
     get dayFree() {
-      return this.dayPosts.length ? this.dayDuty.free : this.dayPresent;
+      return this.dayDuty ? this.dayDuty.free : this.dayPresent;
     },
 
     /** จัดกลุ่มตามฝ่าย — ทะเบียนส่งมาเรียงตามฝ่ายอยู่แล้ว จึงแค่หั่นตามชื่อ */

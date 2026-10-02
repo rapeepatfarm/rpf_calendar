@@ -79,21 +79,45 @@
     </div>
 
     {% if user.role in ('admin', 'manager') and staff %}
-    {# ผู้ช่วยกดเริ่ม/สิ้นสุดงานนี้ได้เหมือนผู้รับผิดชอบหลัก และเห็นใน "งานของฉัน" #}
-    <div class="field" style="margin-top:14px; margin-bottom:0">
-      <label>ผู้ช่วย (เลือกได้หลายคน)</label>
-      <div class="chip-picker">
-        {% set chosen = activity.helper_ids if editing and activity.helper_ids else [] %}
-        {% for s in staff %}
-        <label class="chip-pick">
-          <input type="checkbox" name="helper_ids" value="{{ s.id }}"
-                 {{ 'checked' if s.id in chosen }}>
-          <span>{{ s.name }}</span>
-        </label>
-        {% endfor %}
+    {# ผู้ปฏิบัติงาน (= activity_helpers เดิม, §29.3) กดเริ่ม/สิ้นสุดงานนี้ได้เหมือนผู้รับผิดชอบหลัก
+       และเห็นใน "งานของฉัน" · จัดกลุ่มตามฝ่าย เลือกทั้งฝ่ายได้ — ตอนบันทึกแตกเป็นรายคน
+       · ป้ายความว่างคำนวณจากวันที่กรอก (ลา/ประจำจุด/มีงานอื่น) — ลาตลอดช่วงงานเลือกไม่ได้
+       และเซิร์ฟเวอร์ปฏิเสธซ้ำอีกชั้น (§29.5) #}
+    {% set chosen = activity.helper_ids if editing and activity.helper_ids else [] %}
+    {# ถ้า router ยังเป็นตัวเก่า (ช่วงรอรีสตาร์ต) ให้ทุกคนอยู่กลุ่มเดียว ไม่ให้ช่องเลือกหายไปเฉยๆ #}
+    {% set groups = staff_groups if staff_groups else [{'id': 0, 'name': 'ทุกคน', 'staff': staff}] %}
+    <div class="field" style="margin-top:14px; margin-bottom:0"
+         x-data='workerPicker({
+           chosen: {{ chosen | map("string") | list | tojson }},
+           avail: {{ (availability or {}) | tojson }},
+           activityId: {{ activity.id if editing else 0 }},
+           start: "{{ activity.planned_date if editing else default_date }}",
+           end: "{{ activity.planned_end_date if editing else default_date }}"
+         })'
+         x-on:dates-changed.window="setRange($event.detail.start, $event.detail.end)">
+      <label>ผู้ปฏิบัติงาน (เลือกได้หลายคน หรือทั้งฝ่าย)</label>
+      {% for g in groups %}
+      <div class="chip-group">
+        <div class="chip-group-head">
+          <span>{{ g.name }}</span>
+          <button type="button" class="btn btn-sm" x-on:click='toggleDept({{ g.staff | map(attribute="id") | list | tojson }})'
+                  x-text='allPicked({{ g.staff | map(attribute="id") | list | tojson }}) ? "เอาออกทั้งฝ่าย" : "เลือกทั้งฝ่าย"'></button>
+        </div>
+        <div class="chip-picker">
+          {% for s in g.staff %}
+          <label class="chip-pick" :class="{ 'is-away': state({{ s.id }}).away, 'is-warn': state({{ s.id }}).warn }"
+                 :title="state({{ s.id }}).title">
+            <input type="checkbox" name="helper_ids" value="{{ s.id }}" x-model="picked"
+                   :disabled="state({{ s.id }}).away">
+            <span>{{ s.name }}<small x-show="state({{ s.id }}).label" x-text="state({{ s.id }}).label"></small></span>
+          </label>
+          {% endfor %}
+        </div>
       </div>
+      {% endfor %}
       <div class="hint">
-        คนที่เลือกไว้จะกดเริ่ม/สิ้นสุดงานนี้ได้ด้วย และเห็นงานนี้ใน "งานของฉัน"
+        คนที่เลือกไว้จะกดเริ่ม/สิ้นสุดงานนี้ได้ด้วย และเห็นงานนี้ใน "งานของฉัน" ·
+        <b>ลา</b> ตลอดช่วงงานเลือกไม่ได้ · ลาบางวัน / ประจำจุดงาน / มีงานอื่นวันเดียวกัน แค่บอกไว้ ยังเลือกได้
       </div>
     </div>
     {% endif %}
@@ -106,17 +130,20 @@
     <div class="form-grid">
       <div class="field">
         <label for="planned_date">วันที่เริ่ม *</label>
+        {# เปลี่ยนวันแล้วบอกตัวเลือกผู้ปฏิบัติงานให้คิดป้ายความว่างใหม่ (dates-changed) #}
         <input id="planned_date" name="planned_date" type="date" required
                x-ref="startDate"
                value="{{ (activity.planned_date if editing else default_date) }}"
                x-on:change="if ($refs.endDate.value < $event.target.value)
-                              $refs.endDate.value = $event.target.value">
+                              $refs.endDate.value = $event.target.value;
+                            $dispatch('dates-changed', { start: $event.target.value, end: $refs.endDate.value })">
       </div>
       <div class="field">
         <label for="planned_end_date">วันที่สิ้นสุด</label>
         <input id="planned_end_date" name="planned_end_date" type="date"
                x-ref="endDate"
-               value="{{ (activity.planned_end_date if editing else default_date) }}">
+               value="{{ (activity.planned_end_date if editing else default_date) }}"
+               x-on:change="$dispatch('dates-changed', { start: $refs.startDate.value, end: $event.target.value })">
         <div class="hint">
           งานวันเดียวใส่วันเดียวกับวันเริ่ม · ถ้ากินหลายวันจะขึ้นเป็นแถบลากยาวในปฏิทิน
         </div>
@@ -212,4 +239,8 @@
   <a class="btn" href="{{ '/activities/' ~ activity.id if editing else '/calendar' }}">ยกเลิก</a>
 </div>
 </form>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ asset('js/workers.js') }}"></script>
 {% endblock %}
