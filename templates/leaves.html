@@ -141,27 +141,16 @@
           <input type="hidden" name="next" value="{{ next_url }}">
           <input type="hidden" name="f_staff_id" value="{{ flt.staff_id or '' }}">
           <input type="hidden" name="f_department_id" value="{{ flt.department_id or '' }}">
-          <div class="form-grid">
-            {# กรองฝ่ายก่อนเลือกคน — แบบเดียวกับฟอร์มหน้าที่ประจำ
-               ตัวกรองนี้ไม่มี name จึงไม่ถูกส่งไปกับฟอร์ม เป็นตัวช่วยค้นบนหน้าจอเท่านั้น #}
-            <div class="field">
-              <label>กรองตามฝ่าย</label>
-              <select x-model="dept">
-                <option value="">ทุกฝ่าย</option>
-                <template x-for="g in staffGroups" :key="g.id">
-                  <option :value="String(g.id)" x-text="g.name + ' (' + g.staff.length + ')'"></option>
-                </template>
-              </select>
-            </div>
-            <div class="field">
-              <label>ประเภทการลา</label>
-              <select name="leave_type_id" x-model="f.leave_type_id">
-                <option value="">ไม่ระบุ</option>
-                {% for t in leave_types %}
-                <option value="{{ t.id }}">{{ t.name }}</option>
-                {% endfor %}
-              </select>
-            </div>
+          {# ลำดับการกรอก: ฝ่าย → พนักงาน → ประเภทการลา → วัน (ผู้ใช้สั่ง 2026-10-02)
+             ตัวกรองฝ่ายไม่มี name จึงไม่ถูกส่งไปกับฟอร์ม เป็นตัวช่วยค้นบนหน้าจอเท่านั้น #}
+          <div class="field">
+            <label>ฝ่าย</label>
+            <select x-model="dept">
+              <option value="">ทุกฝ่าย</option>
+              <template x-for="g in staffGroups" :key="g.id">
+                <option :value="String(g.id)" x-text="g.name + ' (' + g.staff.length + ')'"></option>
+              </template>
+            </select>
           </div>
           <div class="field">
             <label>พนักงาน *</label>
@@ -189,6 +178,15 @@
               <span x-text="chosen() && [chosen().position, chosen().department]
                                         .filter(Boolean).join(' · ')"></span>
             </div>
+          </div>
+          <div class="field">
+            <label>ประเภทการลา</label>
+            <select name="leave_type_id" x-model="f.leave_type_id">
+              <option value="">ไม่ระบุ</option>
+              {% for t in leave_types %}
+              <option value="{{ t.id }}">{{ t.name }}</option>
+              {% endfor %}
+            </select>
           </div>
           <div class="form-grid">
             <div class="field">
@@ -277,7 +275,23 @@ function leavePage(data) {
       this.f = { ...row, staff_id: '' };
       this.dept = '';
       this.editing = true;
-      this.applySelection(row.staff_id, v => { this.f.staff_id = v; });
+      this.selectStaff(row.staff_id);
+    },
+
+    /** เลือกคนไว้ให้ พร้อมตั้งตัวกรองฝ่ายเป็นฝ่ายของเขา
+     *
+     *  ใช้ทั้งตอนกดแก้ไขรายการเดิม และตอนเข้ามาจากปุ่ม "กำหนดวันลา" ของพนักงานแต่ละคน
+     *  ต้องใส่ค่าหลังตัวเลือกถูกเรนเดอร์ (applySelection) ไม่งั้นช่องค้างที่ "— เลือก —"
+     */
+    selectStaff(id) {
+      if (!id) return;
+      const group = this.staffGroups.find(g => g.staff.some(s => String(s.id) === String(id)));
+      // ทั้งสองช่องสร้าง <option> ด้วย x-for จึงต้องใส่ค่าหลังตัวเลือกเกิดแล้วทั้งคู่
+      // ถ้าใส่ก่อน ช่องจะค้างโชว์ตัวเลือกแรก ("ทุกฝ่าย" / "— เลือก —") ทั้งที่ข้อมูลข้างในถูกแล้ว
+      this.applySelection(id, v => {
+        if (group) this.dept = String(group.id);
+        this.f.staff_id = v;
+      });
     },
 
     init() {
@@ -287,6 +301,10 @@ function leavePage(data) {
       this.$watch('dept', prune);
       this.$watch('f.date_from', prune);
       this.$watch('f.date_to', prune);
+
+      // เข้ามาจากปุ่ม "กำหนดวันลา" — ฟอร์มเปิดมาพร้อมหน้าเลย ไม่ได้ผ่าน openForm()
+      // จึงต้องเลือกคน/ฝ่ายไว้ให้ตรงนี้ด้วย ไม่งั้นช่องจะว่างทั้งที่รู้อยู่แล้วว่าเป็นใคร
+      if (this.editing) this.selectStaff(this.f.staff_id);
     },
   };
 }
