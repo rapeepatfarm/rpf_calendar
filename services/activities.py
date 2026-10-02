@@ -618,6 +618,50 @@ def set_start_date(conn, activity: dict, user: dict, new_date: date) -> str | No
     return None
 
 
+def set_end_date(conn, activity: dict, user: dict, new_date: date) -> str | None:
+    """แก้วันสิ้นสุดของแผน — ใช้ตอนงานยืดออกหรือจบเร็วกว่าที่วางไว้ (สิทธิ์ผู้ดูแลระบบ)
+
+    ทำสิ่งเดียวกับการแก้ช่อง "วันที่สิ้นสุด" ในฟอร์มแก้ไขเป๊ะ แค่ลัดให้กดได้จากที่ทำงานจริง
+    (เหมือนปุ่มลบใน §28 ที่ย้ายของเดิมมาวางตรงที่เขาใช้) · กติกาจึงต้องตรงกับ `update()`:
+      · `date_overridden` — งานที่ซิงค์มา ถ้าคนที่นี่แก้วันเอง ต้องปักธงกันรอบซิงค์ถัดไปมาทับ
+      · `shift_source_id` ล้างทิ้ง — คนแก้วันเองแล้วถือว่าเป็นเจ้าของวันนั้น
+        ระบบต้องไม่ดึงกลับทีหลังตอนมีคนกดถอนการเริ่มของงานที่เคยดันมันออกไป
+
+    **ไม่แตะ `planned_end_date_original`** เหมือน `update()` — คอลัมน์นั้นเป็นของกลไก
+    เลื่อนวันตอนกดเริ่มงาน (ข้อ 1) ไม่ใช่ของการแก้ด้วยมือ · ผลคือรายงานยังตัดสินตรงแผน/ช้า
+    จากแผนก่อนถูกเลื่อนอัตโนมัติเสมอ
+
+    ไม่ต้องเช็กการชน `UNIQUE (series_id, planned_date)` เพราะกุญแจนั้นคุมเฉพาะวันเริ่ม
+    """
+    if activity["status"] in CLOSED_STATUSES:
+        return f"งานนี้{STATUS_LABELS[activity['status']]}ไปแล้ว แก้วันสิ้นสุดไม่ได้"
+    if new_date < activity["planned_date"]:
+        return (f"วันสิ้นสุดต้องไม่มาก่อนวันเริ่ม "
+                f"({thaidate.short(activity['planned_date'])})")
+
+    old_end = activity["planned_end_date"]
+    if new_date == old_end:
+        return None                     # ตรงอยู่แล้ว ไม่ต้องทำอะไร
+
+    overridden = bool(activity.get("source_system"))
+    execute(conn, """
+        UPDATE activities
+           SET planned_end_date = %s,
+               date_overridden = CASE WHEN %s THEN TRUE ELSE date_overridden END,
+               shift_source_id = NULL,
+               updated_at = NOW(), updated_by = %s
+         WHERE id = %s
+    """, (new_date, overridden, user["id"], activity["id"]))
+
+    days = (new_date - activity["planned_date"]).days + 1
+    detail = (f"แก้วันสิ้นสุด {thaidate.short(old_end)} → {thaidate.short(new_date)} "
+              f"(รวมเป็น {days} วัน)")
+    if overridden:
+        detail += " · วันที่นี้จะถูกส่งกลับไปใช้ที่โปรแกรมต้นทาง"
+    _log(conn, activity["id"], "rescheduled", user, None, None, detail)
+    return None
+
+
 def unstart(conn, activity: dict, user: dict) -> str | None:
     """ยกเลิกการเริ่มงาน — กลับไปเป็นแผนเหมือนยังไม่ได้กด
 

@@ -17,7 +17,7 @@
 
 {# startAsk เก็บงานที่กำลังถามยืนยันก่อนกดเริ่ม — ประกาศไว้ที่ชั้นนอกสุด
    เพื่อให้ปุ่มเริ่มงานที่อยู่ลึกแค่ไหนก็เรียกได้ (Alpine ส่ง scope ลงไปให้ลูกทุกชั้น) #}
-<div class="layout" x-data="{ nav: false, startAsk: null, dateAsk: null }">
+<div class="layout" x-data="{ nav: false, startAsk: null, dateAsk: null, endAsk: null }">
 
   <aside class="sidebar" :class="{ open: nav }">
     <div class="brand">
@@ -127,6 +127,43 @@
       <span class="ico">⚙</span>ตั้งค่า
     </a>
   </nav>
+
+  {# ── กล่องแก้วันสิ้นสุดของแผน (ผู้ดูแลระบบเท่านั้น) ─────────
+     ใช้ตอนงานยืดออกหรือจบเร็วกว่าที่วางไว้ · รวมไว้ที่นี่ที่เดียวเหมือน startAsk/dateAsk
+     เพื่อไม่ให้แต่ละหน้าประกอบฟอร์มเองแล้วลืมฟิลด์
+
+     ต่างจากสองกล่องนั้นตรงที่ **ไม่ render ให้คนที่ใช้ไม่ได้** — ปุ่มที่เปิดมันก็ถูกซ่อนอยู่แล้ว
+     เหลือไว้ก็เป็น markup ตายที่ชวนสับสนเวลาอ่านหน้าเว็บ (สิทธิ์จริงกันที่เซิร์ฟเวอร์เสมอ) #}
+  {% if user.role == 'admin' %}
+  <template x-if="endAsk">
+    <div>
+      <div class="modal-scrim" x-on:click="endAsk = null"></div>
+      <div class="modal modal-sm">
+        <form method="post" :action="'/activities/' + endAsk.id + '/end-date'">
+          <input type="hidden" name="next" :value="endAsk.back">
+          <div class="modal-head"><h3>แก้วันสิ้นสุดของแผน</h3></div>
+          <div class="modal-body">
+            <div class="confirm-title" x-text="endAsk.title"></div>
+            <div class="confirm-when" x-text="'แผนปัจจุบัน: ' + endAsk.when"></div>
+            <div class="field" style="margin-top:14px">
+              <label for="ended_on">ให้สิ้นสุดวันไหน</label>
+              <input id="ended_on" name="ended_on" type="date" required
+                     :value="endAsk.end" :min="endAsk.start">
+            </div>
+            <p class="hint" style="margin:10px 0 0">
+              วันเริ่มคงเดิม เปลี่ยนเฉพาะวันสิ้นสุด · แถบในปฏิทินจะสั้นลงหรือยาวขึ้นตาม ·
+              รายงาน "ทำตรงแผน" ยังตัดสินจากแผนก่อนถูกเลื่อนอัตโนมัติเหมือนเดิม
+            </p>
+          </div>
+          <div class="modal-foot">
+            <button class="btn" type="button" x-on:click="endAsk = null">ยกเลิก</button>
+            <button class="btn btn-primary" type="submit">บันทึกวันสิ้นสุด</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </template>
+  {% endif %}
 
   {# ── กล่องแก้วันเริ่มงานย้อนหลัง ──────────────────────────
      ใช้ตอนลงมือจริงไปแล้วแต่ลืมกดปุ่ม · ใช้ร่วมกันทุกหน้าเหมือน startAsk

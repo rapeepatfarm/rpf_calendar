@@ -49,7 +49,7 @@
   </template>
   <template x-if="picked.can_run && picked.status === 'in_progress'">
     <form method="post" :action="'/activities/' + picked.id + '/unstart'"
-          x-on:submit="if (!confirm('ยกเลิกการเริ่มงาน? งานจะกลับไปเป็นแผนเหมือนยังไม่ได้กด')) $event.preventDefault()">
+          x-on:submit="confirm('ยกเลิกการเริ่มงาน? งานจะกลับไปเป็นแผนเหมือนยังไม่ได้กด') || $event.preventDefault()">
       <input type="hidden" name="next" :value="backUrl">
       <button class="btn btn-sm" type="submit">ยกเลิกการเริ่ม</button>
     </form>
@@ -60,16 +60,39 @@
                                     started: picked.started, date: picked.started_on,
                                     today: todayIso, back: backUrl }">แก้วันเริ่ม</button>
   </template>
+  {# แก้วันสิ้นสุด — ผู้ดูแลระบบเท่านั้น · ปุ่มอยู่ตรงที่เขาทำงานจริง (กล่องข้างปฏิทิน)
+     เช็คสิทธิ์ซ้ำที่เซิร์ฟเวอร์ใน routers/activities.end_date() #}
+  {% if user.role == 'admin' %}
+  <template x-if="!picked.closed">
+    <button class="btn btn-sm" type="button" title="งานยืดออกหรือจบเร็วกว่าที่วางไว้"
+            x-on:click="endAsk = { id: picked.id, title: picked.title, when: picked.when,
+                                   start: picked.date, end: picked.end, back: backUrl }">
+      แก้วันสิ้นสุด</button>
+  </template>
+  {% endif %}
   <a class="btn btn-sm" :href="'/activities/' + picked.id">เปิดหน้าเต็ม</a>
   {# ลบได้เฉพาะหัวหน้างานขึ้นไป — เช็คซ้ำที่เซิร์ฟเวอร์อีกชั้นใน routers/activities.delete()
      ซ่อนปุ่มอย่างเดียวไม่พอ เพราะยิง POST ตรงๆ ได้ #}
   {% if can_manage %}
+  {# ต้องเป็น "นิพจน์บรรทัดเดียว" และใช้ 
+ แทนการขึ้นบรรทัดจริง — ดูหมายเหตุท้ายไฟล์
+     ของเดิมเขียนคร่อมหลายบรรทัด ทำให้ Alpine คอมไพล์ไม่ผ่าน กล่องยืนยันเลยไม่ขึ้น
+     แล้ว **กดลบแล้วลบทันที** (เจอ 2026-10-02 · tests/test_templates.py กันไว้แล้ว) #}
   <form method="post" :action="'/activities/' + picked.id + '/delete'"
-        x-on:submit="if (!confirm('ลบ &quot;' + picked.title + '&quot; ออกจากปฏิทิน?
-
-ประวัติจะยังถูกเก็บไว้ในระบบ')) $event.preventDefault()">
+        x-on:submit="confirm('ลบ &quot;' + picked.title + '&quot; ออกจากปฏิทิน?\n\nประวัติจะยังถูกเก็บไว้ในระบบ') || $event.preventDefault()">
     <input type="hidden" name="next" :value="backUrl">
     <button class="btn btn-sm btn-danger" type="submit">ลบ</button>
   </form>
   {% endif %}
 </div>
+
+{# ── หมายเหตุ: ตัวจัดการเหตุการณ์ของ Alpine ที่นี่ ──────────────────────────────
+   1. **ห้ามขึ้นบรรทัดจริงในสตริง** — JavaScript ไม่ยอมให้สตริงคร่อมบรรทัด ใช้ 
+ แทน
+   2. ถ้าจะเขียนขึ้นต้นด้วย `if (...)` วงเล็บต้องปิดในบรรทัดเดียวกัน เพราะ Alpine ใช้
+      regex บรรทัดเดียวตรวจว่าเป็น "คำสั่ง" เพื่อห่อด้วย IIFE ให้ · ถ้าไม่เข้าเงื่อนไข
+      มันจะเอาไปวางหลัง `=` ตรงๆ แล้วได้ SyntaxError — ตัวจัดการนั้นจะ **ตายเงียบ**
+      ไม่มีอะไรบนหน้าจอบอก รู้ได้จาก console เท่านั้น
+   เลี่ยงปัญหาทั้งสองข้อด้วยการเขียนเป็น "นิพจน์บรรทัดเดียว" เสมอ เช่น
+      confirm('...') || $event.preventDefault()
+#}

@@ -80,6 +80,8 @@ def panel_data(rows: list[dict]) -> list[dict]:
         # วัน ISO ดิบ — ใช้คำนวณว่าต้องเลื่อนปฏิทินไปเดือนไหนตอนกดจากลิสต์
         # (ข้อความไทยใน "when" เอาไปคำนวณต่อไม่ได้ และห้ามแปลงกลับใน JS)
         "date": r["planned_date"].isoformat(),
+        # วันสิ้นสุดดิบ — ใช้เป็นค่าตั้งต้น/ขอบล่างของกล่องแก้วันสิ้นสุด (ห้ามแปลงกลับใน JS)
+        "end": r["planned_end_date"].isoformat(),
         "when": thaidate.span(r["planned_date"], r["planned_end_date"]),
         "time": ("ทั้งวัน" if r["is_all_day"] else
                  thaidate.time_range(r["planned_start_time"], r["planned_end_time"],

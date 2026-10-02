@@ -9,6 +9,7 @@ from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
 from auth import (can_create, can_edit_activity, can_manage, can_run_activity,
+                  require_admin,
                   require_login)
 from database import fetchall, get_conn
 from forms import as_bool, as_date, as_int, as_priority, as_text, as_time
@@ -288,6 +289,25 @@ def start_date(request: Request, activity_id: int,
                          err="ใส่วันที่เริ่มงานให้ถูกต้องด้วย")
     return _run_action(request, activity_id, next,
                        lambda c, a, u: act.set_start_date(c, a, u, when))
+
+
+@router.post("/{activity_id}/end-date")
+def end_date(request: Request, activity_id: int,
+             ended_on: str = Form(""), next: str = Form("")):
+    """แก้วันสิ้นสุดของแผน — **ผู้ดูแลระบบเท่านั้น** ตามที่ผู้ใช้กำหนด
+
+    ไม่ใช้ `_run_action` เพราะตัวนั้นตรวจ `can_run_activity` (เจ้าของงาน/หัวหน้า)
+    ซึ่งกว้างกว่าที่ต้องการที่นี่ · ตรวจสิทธิ์ที่เซิร์ฟเวอร์เสมอ ไม่ใช่แค่ซ่อนปุ่ม (กติกาข้อ 10)
+    """
+    user = require_admin(request)
+    back = _safe_next(next, f"/activities/{activity_id}")
+    when = as_date(ended_on)
+    if when is None:
+        return _redirect(back, err="ใส่วันสิ้นสุดให้ถูกต้องด้วย")
+    with get_conn() as conn:
+        activity = _load(conn, activity_id)
+        problem = act.set_end_date(conn, activity, user, when)
+    return _redirect(back, err=problem) if problem else _redirect(back, ok="แก้วันสิ้นสุดแล้ว")
 
 
 @router.post("/{activity_id}/finish")

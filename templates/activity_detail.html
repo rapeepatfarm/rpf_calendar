@@ -259,6 +259,14 @@
     {% if a.can_edit %}
     <a class="btn" href="/activities/{{ a.id }}/edit">แก้ไข</a>
     {% endif %}
+    {# แก้วันสิ้นสุดอย่างเดียว — ผู้ดูแลระบบเท่านั้นตามที่ผู้ใช้กำหนด
+       (ตรวจซ้ำที่ routers/activities.end_date ด้วย require_admin ไม่ใช่แค่ซ่อนปุ่ม) #}
+    {% if user.role == 'admin' and a.status not in ('done', 'cancelled', 'missed') %}
+    <button class="btn" type="button" title="งานยืดออกหรือจบเร็วกว่าที่วางไว้"
+            x-on:click='endAsk = {{ m.end_payload(a, request.url.path) }}'>
+      📅 แก้วันสิ้นสุด
+    </button>
+    {% endif %}
     {% if a.can_edit and a.status not in ('done', 'cancelled', 'missed') %}
     <button class="btn btn-danger" x-on:click="cancelOpen = true">ยกเลิกกิจกรรม</button>
     {% endif %}
