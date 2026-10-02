@@ -287,3 +287,27 @@ def test_panel_data_sends_raw_iso_dates_for_js_and_thai_text_for_display():
     assert row["part_label"] == "ทั้งวัน"
     assert row["note"] == "ไปงานบวช"
     assert row["staff_id"] == 9
+
+
+# ── จัดกลุ่มพนักงานตามฝ่าย (ตัวกรองในฟอร์มหน้าที่ประจำ) ──────────
+
+def staff_row(id, name, dept_id=None, dept_name=None):
+    return {"id": id, "name": name, "department_id": dept_id, "department_name": dept_name}
+
+
+def test_staff_groups_follow_the_order_rows_come_in():
+    rows = [staff_row(1, "ก", 1, "เลี้ยงไก่"), staff_row(2, "ข", 1, "เลี้ยงไก่"),
+            staff_row(3, "ค", 2, "BIOGAS")]
+    groups = staffing.staff_groups(rows)
+    assert [(g["name"], [s["name"] for s in g["staff"]]) for g in groups] == [
+        ("เลี้ยงไก่", ["ก", "ข"]), ("BIOGAS", ["ค"])]
+
+
+def test_staff_without_a_department_get_their_own_group():
+    groups = staffing.staff_groups([staff_row(1, "ก"), staff_row(2, "ข", 1, "เลี้ยงไก่")])
+    assert groups[0]["name"] == "ยังไม่ระบุฝ่าย" and groups[0]["id"] == 0
+    assert [s["name"] for s in groups[1]["staff"]] == ["ข"]
+
+
+def test_staff_groups_of_an_empty_register_is_empty():
+    assert staffing.staff_groups([]) == []

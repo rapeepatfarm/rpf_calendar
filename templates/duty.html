@@ -24,7 +24,8 @@
 {% endblock %}
 
 {% block content %}
-<div x-data='dutyPage({ blankPost: {{ blank_post | tojson }}, blankAssign: {{ blank_assign | tojson }} })'
+<div x-data='dutyPage({ blankPost: {{ blank_post | tojson }}, blankAssign: {{ blank_assign | tojson }},
+                       staffGroups: {{ (staff_groups or []) | tojson }} })'
      x-on:open-post.window="openPost(blankPost)">
 
 {# ── การลาที่เพิ่งบันทึก → กระทบจุดไหน (§29.6 ถามหาคนแทนตอนบันทึกลา) ── #}
@@ -275,15 +276,31 @@
                 {% for p in posts if p.active %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
               </select>
             </div>
+            {# กรองฝ่ายก่อนเลือกคน — ฟาร์มมีพนักงานหลายสิบคน ไล่หาในลิสต์เดียวยาก
+               ตัวกรองนี้ไม่ได้ถูกส่งไปกับฟอร์ม เป็นแค่ตัวช่วยค้นบนหน้าจอ #}
             <div class="field">
-              <label x-text="mode === 'cover' ? 'คนที่มาแทน *' : 'พนักงาน *'"></label>
-              <select name="staff_id" x-model="assign.staff_id" required>
-                <option value="">— เลือก —</option>
-                {% for s in staff %}
-                <option value="{{ s.id }}">{{ s.name }}{{ ' · ' ~ s.department_name if s.department_name }}</option>
-                {% endfor %}
+              <label>กรองตามฝ่าย</label>
+              <select x-model="dept">
+                <option value="">ทุกฝ่าย</option>
+                <template x-for="g in staffGroups" :key="g.id">
+                  <option :value="String(g.id)" x-text="g.name + ' (' + g.staff.length + ')'"></option>
+                </template>
               </select>
             </div>
+          </div>
+          <div class="field">
+            <label x-text="mode === 'cover' ? 'คนที่มาแทน *' : 'พนักงาน *'"></label>
+            <select name="staff_id" x-model="assign.staff_id" required>
+              <option value="">— เลือก —</option>
+              <template x-for="g in visibleGroups" :key="g.id">
+                <optgroup :label="g.name">
+                  <template x-for="s in g.staff" :key="s.id">
+                    <option :value="String(s.id)" x-text="s.name"></option>
+                  </template>
+                </optgroup>
+              </template>
+            </select>
+            <div class="hint" x-show="dept" x-text="'แสดงเฉพาะฝ่ายที่เลือก — ' + visibleCount + ' คน'"></div>
           </div>
           <div class="field" x-show="mode === 'cover'">
             <label>แทนใคร</label>
@@ -348,12 +365,43 @@
 function dutyPage(data) {
   return {
     blankPost: data.blankPost, blankAssign: data.blankAssign,
+    staffGroups: data.staffGroups || [],
     postOpen: false, post: { ...data.blankPost },
     assignOpen: false, assign: { ...data.blankAssign }, mode: 'regular',
+    dept: '',                       // ตัวกรองฝ่ายในฟอร์ม — ไม่ถูกส่งไปกับฟอร์ม
     endOpen: false, end: { id: '', name: '', ends_on: '' },
+
+    get visibleGroups() {
+      return this.dept ? this.staffGroups.filter(g => String(g.id) === this.dept) : this.staffGroups;
+    },
+
+    get visibleCount() {
+      return this.visibleGroups.reduce((n, g) => n + g.staff.length, 0);
+    },
+
     openPost(p) { this.post = { ...p }; this.postOpen = true; },
-    openAssign(a, mode) { this.assign = { ...a }; this.mode = mode; this.assignOpen = true; },
+
+    /** เปิดฟอร์มมอบหมาย — ล้างตัวกรองทุกครั้ง
+     *  ไม่งั้นเปิดครั้งถัดไปแล้วคนที่เลือกไว้หายจากลิสต์เพราะตัวกรองเก่าค้างอยู่ */
+    openAssign(a, mode) {
+      this.assign = { ...a };
+      this.mode = mode;
+      this.dept = '';
+      this.assignOpen = true;
+    },
+
     openEnd(e) { this.end = { ...e }; this.endOpen = true; },
+
+    init() {
+      // เปลี่ยนฝ่ายแล้วคนที่เลือกไว้หลุดจากลิสต์ ต้องล้างค่าด้วย ไม่งั้นหน้าจอโชว์ว่าง
+      // แต่ค่าเดิมยังติดไปกับฟอร์ม แล้วบันทึกคนผิดโดยไม่มีใครรู้
+      this.$watch('dept', () => {
+        const ids = this.visibleGroups.flatMap(g => g.staff.map(s => String(s.id)));
+        if (this.assign.staff_id && !ids.includes(String(this.assign.staff_id))) {
+          this.assign.staff_id = '';
+        }
+      });
+    },
   };
 }
 </script>

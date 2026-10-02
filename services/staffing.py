@@ -316,6 +316,22 @@ def active_staff(conn) -> list[dict]:
     """)
 
 
+def staff_groups(rows: list[dict]) -> list[dict]:
+    """หั่นทะเบียนที่เรียงตามฝ่ายมาแล้วเป็นกลุ่มๆ — ใช้ทำตัวกรองฝ่ายในฟอร์ม
+
+    ตรรกะล้วน รับ rows จาก `active_staff()` ซึ่ง ORDER BY ฝ่ายไว้แล้ว จึงแค่ไล่หั่น
+    (แบบเดียวกับที่ฟอร์มกิจกรรมทำในเฟส D — ที่นี่ยกมาไว้ส่วนกลางเพื่อไม่ให้เขียนซ้ำสองที่)
+    """
+    groups: list[dict] = []
+    for s in rows:
+        key = s.get("department_id") or 0
+        if not groups or groups[-1]["id"] != key:
+            groups.append({"id": key, "name": s.get("department_name") or "ยังไม่ระบุฝ่าย",
+                           "staff": []})
+        groups[-1]["staff"].append({"id": s["id"], "name": s["name"]})
+    return groups
+
+
 def load_roster_inputs(conn, start: date, end: date) -> dict:
     """ดึงทุกอย่างที่ตัวคำนวณล้วนต้องใช้สำหรับช่วง [start, end] ในครั้งเดียว"""
     return {

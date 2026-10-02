@@ -86,11 +86,14 @@ def duty_page(request: Request, department_id: OptInt = None, all: str = "",
                                              staff_id=asked["staff_id"])
 
         absent_today = {pid: [a["staff_id"] for a in r["absent"]] for pid, r in today_state.items()}
+        staff_rows = staffing.active_staff(conn)
         return page(request, user, "duty.html", conn=conn,
                     posts=posts, by_post=by_post, today_state=today_state,
                     absent_today=absent_today, runs=runs,
                     asked=asked, asked_runs=asked_runs,
-                    staff=staffing.active_staff(conn),
+                    staff=staff_rows,
+                    # จัดกลุ่มตามฝ่ายให้ฟอร์มกรองได้ (ผู้ใช้ขอ 2026-10-02 — คนเยอะแล้วหายาก)
+                    staff_groups=staffing.staff_groups(staff_rows),
                     departments=fetchall(conn, "SELECT id, name FROM departments WHERE active "
                                                "ORDER BY sort_order, name"),
                     flt={"department_id": department_id}, show_all=all == "1",
