@@ -252,9 +252,18 @@ async def edit(request: Request, series_id: int):
         """, {**data, "id": series_id, "user_id": user["id"]})
 
         _set_series_helpers(conn, series_id, _helper_ids(form))
+        # ลบ "ตั้งแต่วันนี้เป็นต้นไป" ไม่ใช่ "หลังวันนี้"
+        #
+        # ของเดิมใช้ > CURRENT_DATE รอบที่ตกวันนี้จึงรอด แล้วเกิดอาการที่ผู้ใช้เจอ
+        # (2026-10-02): แก้แผนเปลี่ยนวันเริ่มกับชื่อ แต่ปฏิทินยังโชว์วันเก่าชื่อเก่า
+        # เพราะโหมด after_done เห็นว่ามีรอบที่ยังไม่ปิดค้างอยู่แล้วเลยไม่สร้างรอบใหม่
+        # ส่วนโหมด fixed ก็ได้รอบเก่าค้างปนกับรอบใหม่
+        #
+        # รอบของ "วันนี้" ที่ยังไม่มีใครแตะเลยถือเป็นแค่แผน ต้องเดินตามแผนที่เพิ่งแก้
+        # แต่ **รอบที่เลยมาแล้วยังไม่ปิดห้ามแตะ** — นั่นคืองานค้างจริงที่ต้องตามเก็บ
         removed = execute(conn, """
             DELETE FROM activities
-             WHERE series_id = %s AND planned_date > CURRENT_DATE
+             WHERE series_id = %s AND planned_date >= CURRENT_DATE
                AND status = 'planned' AND started_at IS NULL
                AND result_note = '' AND NOT is_deleted
         """, (series_id,))
