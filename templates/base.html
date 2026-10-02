@@ -154,7 +154,9 @@
       <div class="modal modal-sm">
         <form method="post" :action="'/activities/' + endAsk.id + '/end-date'">
           <input type="hidden" name="next" :value="endAsk.back">
-          <div class="modal-head"><h3>แก้วันสิ้นสุดของแผน</h3></div>
+          <div class="modal-head">
+            <h3 x-text="endAsk.closed ? 'แก้ไขประวัติ — วันสิ้นสุดของแผน' : 'แก้วันสิ้นสุดของแผน'"></h3>
+          </div>
           <div class="modal-body">
             <div class="confirm-title" x-text="endAsk.title"></div>
             <div class="confirm-when" x-text="'แผนปัจจุบัน: ' + endAsk.when"></div>
@@ -168,8 +170,9 @@
             </p>
             {# งานที่ปิดไปแล้วแก้ได้ แต่ต้องรู้ตัวว่ามันขยับเกณฑ์ "เสร็จตรงแผน/ช้า" ในรายงาน #}
             <p class="alert" style="margin:10px 0 0" x-show="endAsk.closed">
-              งานนี้ปิดไปแล้ว — การแก้วันสิ้นสุดจะเปลี่ยนผลในรายงานด้วยว่าเสร็จตรงแผนหรือช้า
-              · ประวัติจะบันทึกไว้ว่าแก้ย้อนหลัง
+              <b>งานนี้ปิดไปแล้ว</b> — การแก้วันสิ้นสุดมีผลกับรายงาน: เกณฑ์ "เสร็จตรงแผน / ช้ากว่าแผน"
+              ของงานนี้จะถูกคิดใหม่ และถ้าย้ายข้ามเดือน งานจะไปนับอยู่ในรายงานของอีกเดือน
+              · เวลาที่ใช้จริงและวันที่กดเสร็จไม่เปลี่ยน · ประวัติบันทึกไว้ว่าแก้ย้อนหลัง
             </p>
           </div>
           <div class="modal-foot">

@@ -74,7 +74,11 @@ def account(request: Request, ok: str = "", err: str = "", force: str = ""):
     user = require_login(request)
     with get_conn() as conn:
         # ผู้ใช้ควรเห็นว่าตัวเองถูกผูกกับพนักงานคนไหน เพราะมันตัดสินว่าเห็น "งานของฉัน" อะไรบ้าง
-        linked = fetchall(conn, "SELECT name, position FROM staff WHERE user_id = %s", (user["id"],))
+        linked = fetchall(conn, """
+            SELECT s.name, p.name AS position
+              FROM staff s LEFT JOIN positions p ON p.id = s.position_id
+             WHERE s.user_id = %s
+        """, (user["id"],))
         return page(request, user, "account.html", conn=conn,
                     linked=linked[0] if linked else None,
                     forced=bool(user.get("must_change_password")))

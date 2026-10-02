@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}ตำแหน่งงาน · RPF Calendar{% endblock %}
+{% block page_title %}ตำแหน่งงาน{% endblock %}
+
+{% set blank = {'id': '', 'name': '', 'can_assign': True, 'sort_order': 0,
+                'active': True, 'note': ''} %}
+
+{% block content %}
+<div x-data='{ editing: false, f: {{ blank | tojson }} }'>
+
+<div class="card">
+  <div class="card-head">
+    <a class="btn btn-sm" href="/master/staff" title="กลับไปหน้าพนักงาน">‹ พนักงาน</a>
+    <h2 class="card-title">ทะเบียนตำแหน่งงาน</h2>
+    <span class="faint" style="font-size:12.5px">{{ rows | length }} ตำแหน่ง</span>
+    <div class="spacer"></div>
+    <button class="btn btn-primary btn-sm"
+            x-on:click='f = {{ blank | tojson }}; editing = true'>+ เพิ่มตำแหน่ง</button>
+  </div>
+  <div class="card-body tight">
+    <div class="table-scroll">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>ชื่อตำแหน่ง</th>
+            <th>เป็นผู้รับผิดชอบงานได้</th>
+            <th class="num">พนักงาน</th>
+            <th>หมายเหตุ</th>
+            <th>สถานะ</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for r in rows %}
+          <tr>
+            <td>{{ r.name }}</td>
+            <td>
+              {% if r.can_assign %}<span class="badge st-done">ได้</span>
+              {% else %}<span class="badge">ไม่ได้</span>{% endif %}
+            </td>
+            <td class="num">
+              {% if r.staff_n %}
+              <a href="/master/staff?position_id={{ r.id }}">{{ r.staff_n }}</a>
+              {% else %}<span class="faint">0</span>{% endif %}
+            </td>
+            <td class="faint">{{ r.note or '' }}</td>
+            <td>
+              {% if r.active %}<span class="badge st-done">ใช้งาน</span>
+              {% else %}<span class="badge">ปิดใช้งาน</span>{% endif %}
+            </td>
+            <td class="row-actions">
+              <button class="btn btn-sm" x-on:click='f = {{ {
+                'id': r.id, 'name': r.name, 'can_assign': r.can_assign,
+                'sort_order': r.sort_order, 'active': r.active,
+                'note': r.note } | tojson }}; editing = true'>แก้ไข</button>
+              <form method="post" action="/master/positions/{{ r.id }}/delete"
+                    style="display:inline"
+                    onsubmit="return confirm('ลบตำแหน่ง {{ r.name }}?')">
+                <button class="btn btn-sm btn-danger" type="submit">ลบ</button>
+              </form>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="6"><div class="empty">ยังไม่มีตำแหน่งงาน</div></td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="hint" style="margin-top:12px">
+  ช่อง <b>"เป็นผู้รับผิดชอบงานได้"</b> คุมว่าคนในตำแหน่งนี้จะขึ้นในช่อง <b>ผู้รับผิดชอบ</b>
+  ของฟอร์มกิจกรรมและแผนงานประจำหรือไม่ · ปิดไว้สำหรับตำแหน่งที่เป็นผู้ลงมือทำอย่างเดียว
+  <br>ไม่ว่าจะเปิดหรือปิด ทุกคนยังถูกเลือกเป็น <b>ผู้ปฏิบัติงาน</b> ได้เหมือนกันหมด
+</div>
+
+<template x-if="editing">
+  <div>
+    <div class="modal-scrim" x-on:click="editing = false"></div>
+    <div class="modal">
+      <form method="post" action="/master/positions/save">
+        <div class="modal-head">
+          <h3 x-text="f.id ? 'แก้ไขตำแหน่งงาน' : 'เพิ่มตำแหน่งงาน'"></h3>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" name="id" :value="f.id">
+          <div class="field">
+            <label>ชื่อตำแหน่ง *</label>
+            <input name="name" x-model="f.name" required maxlength="60"
+                   placeholder="เช่น หัวหน้างาน">
+          </div>
+          <div class="form-grid">
+            <div class="field">
+              <label>ลำดับการแสดง</label>
+              <input name="sort_order" type="number" x-model="f.sort_order">
+            </div>
+            <div class="field">
+              <label>หมายเหตุ</label>
+              <input name="note" x-model="f.note" maxlength="200">
+            </div>
+          </div>
+          <label class="check">
+            <input type="checkbox" name="can_assign" value="1" x-model="f.can_assign">
+            <span>
+              เลือกเป็น "ผู้รับผิดชอบ" ของกิจกรรมได้
+              <div class="hint" style="margin-top:3px">
+                เอาเครื่องหมายออกสำหรับตำแหน่งที่ไม่ได้รับผิดชอบงาน เช่นพนักงานทั่วไป
+              </div>
+            </span>
+          </label>
+          <label class="check" style="margin-top:12px">
+            <input type="checkbox" name="active" value="1" x-model="f.active">
+            <span>เปิดใช้งาน (ปิดแล้วจะไม่ขึ้นในตัวเลือกตอนกรอกพนักงานใหม่)</span>
+          </label>
+        </div>
+        <div class="modal-foot">
+          <button class="btn" type="button" x-on:click="editing = false">ยกเลิก</button>
+          <button class="btn btn-primary" type="submit">บันทึก</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</template>
+
+</div>
+{% endblock %}

@@ -87,13 +87,14 @@ def by_person(conn, start: date, end: date, filters: dict | None = None) -> list
     """ภาระงานรายคน — รวมคนที่ยังไม่มีงานในช่วงนี้ด้วย จะได้เห็นว่าใครว่าง"""
     where, params = _filter_sql(filters or {})
     rows = fetchall(conn, f"""
-        SELECT s.id, s.name, s.position, s.color, {_BUCKETS}
+        SELECT s.id, s.name, p.name AS position, s.color, {_BUCKETS}
           FROM staff s
+          LEFT JOIN positions p ON p.id = s.position_id
           LEFT JOIN activities a
                  ON a.assignee_id = s.id AND NOT a.is_deleted
                 AND {_PLAN_END} BETWEEN %s AND %s {where}
          WHERE s.active
-         GROUP BY s.id, s.name, s.position, s.color, s.sort_order
+         GROUP BY s.id, s.name, p.name, s.color, s.sort_order
          ORDER BY s.sort_order, s.name
     """, [start, end] + params)
     return [_with_rate(r) for r in rows]

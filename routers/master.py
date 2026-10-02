@@ -105,33 +105,35 @@ def delete_category(request: Request, category_id: int):
 # ตาราง staff เดิม (เคยเรียกว่า "ผู้รับผิดชอบ") — v2 ขยายเป็นทะเบียนพนักงานทั้งฟาร์ม
 # มีรหัส ฝ่าย ตำแหน่ง · คำว่า "ผู้รับผิดชอบ" ยังใช้กับ *ช่อง* ในกิจกรรมเหมือนเดิม
 
-def _staff_filters(department_id: OptInt, position: str) -> dict:
-    return {"department_id": department_id, "position": as_text(position)}
+def _staff_filters(department_id: OptInt, position_id: OptInt) -> dict:
+    return {"department_id": department_id, "position_id": position_id}
 
 
 @router.get("/staff")
 def staff_page(request: Request, ok: str = "", err: str = "",
-               department_id: OptInt = None, position: str = ""):
+               department_id: OptInt = None, position_id: OptInt = None):
     user = require_role(request, "manager")
-    f = _staff_filters(department_id, position)
+    f = _staff_filters(department_id, position_id)
 
     where, params = [], []
     if f["department_id"]:
         where.append("s.department_id = %s")
         params.append(f["department_id"])
-    if f["position"]:
-        where.append("s.position = %s")
-        params.append(f["position"])
+    if f["position_id"]:
+        where.append("s.position_id = %s")
+        params.append(f["position_id"])
 
     with get_conn() as conn:
         rows = fetchall(conn, f"""
             SELECT s.*, u.username, u.role AS user_role, d.name AS department_name,
+                   p.name AS position_name, p.can_assign,
                    (SELECT COUNT(*) FROM activities a
                      WHERE a.assignee_id = s.id AND NOT a.is_deleted
                        AND a.status IN ('planned', 'in_progress')) AS open_n
               FROM staff s
               LEFT JOIN users u ON u.id = s.user_id
               LEFT JOIN departments d ON d.id = s.department_id
+              LEFT JOIN positions p ON p.id = s.position_id
              {'WHERE ' + ' AND '.join(where) if where else ''}
              ORDER BY d.sort_order NULLS LAST, d.name, s.sort_order, s.name
         """, params)
@@ -144,10 +146,8 @@ def staff_page(request: Request, ok: str = "", err: str = "",
         """)
         departments = fetchall(conn, "SELECT id, name, active FROM departments "
                                      "ORDER BY sort_order, name")
-        # ตำแหน่งยังเป็นข้อความอิสระ ตัวกรองจึงดึงจากค่าที่มีคนกรอกไว้จริง
-        positions = [r["position"] for r in fetchall(conn, """
-            SELECT DISTINCT position FROM staff WHERE position <> '' ORDER BY position
-        """)]
+        positions = fetchall(conn, "SELECT id, name, can_assign, active FROM positions "
+                                   "ORDER BY sort_order, name")
         # ส่งตัวกรองเป็น `flt` ไม่ใช่ `f` — ในเทมเพลต `f` เป็นฟอร์มของ Alpine อยู่แล้ว
         return page(request, user, "master_staff.html", conn=conn,
                     rows=rows, free_users=free_users, departments=departments,
@@ -159,18 +159,17 @@ def staff_page(request: Request, ok: str = "", err: str = "",
 def save_staff(request: Request,
                id: str = Form(""), name: str = Form(...),
                code: str = Form(""), department_id: str = Form(""),
-               position: str = Form(""), phone: str = Form(""),
+               position_id: str = Form(""), phone: str = Form(""),
                color: str = Form("#2f7de1"), user_id: str = Form(""),
                sort_order: str = Form("0"), active: str = Form(""),
-               note: str = Form(""), is_supervisor: str = Form(""),
-               f_department_id: str = Form(""), f_position: str = Form("")):
+               note: str = Form(""),
+               f_department_id: str = Form(""), f_position_id: str = Form("")):
     require_role(request, "manager")
-    keep = {"department_id": f_department_id, "position": f_position}
+    keep = {"department_id": f_department_id, "position_id": f_position_id}
     values = (as_text(name), as_text(code).upper(), as_int(department_id),
-              as_text(position), as_text(phone),
+              as_int(position_id), as_text(phone),
               as_text(color) or "#2f7de1", as_int(user_id),
-              as_int(sort_order, 0), as_bool(active), as_text(note),
-              as_bool(is_supervisor))
+              as_int(sort_order, 0), as_bool(active), as_text(note))
     if not values[0]:
         return _back("/master/staff", err="ต้องกรอกชื่อพนักงาน", keep=keep)
 
@@ -179,16 +178,16 @@ def save_staff(request: Request,
             if as_int(id):
                 execute(conn, """
                     UPDATE staff SET name = %s, code = %s, department_id = %s,
-                           position = %s, phone = %s, color = %s,
+                           position_id = %s, phone = %s, color = %s,
                            user_id = %s, sort_order = %s, active = %s, note = %s,
-                           is_supervisor = %s, updated_at = NOW()
+                           updated_at = NOW()
                      WHERE id = %s
                 """, values + (as_int(id),))
             else:
                 execute(conn, """
-                    INSERT INTO staff (name, code, department_id, position, phone, color,
-                                       user_id, sort_order, active, note, is_supervisor)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    INSERT INTO staff (name, code, department_id, position_id, phone, color,
+                                       user_id, sort_order, active, note)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, values)
     except errors.UniqueViolation as e:
         # มี unique สองตัวบนตารางนี้ ต้องบอกให้ถูกว่าชนตัวไหน
@@ -202,13 +201,13 @@ def save_staff(request: Request,
 
 @router.post("/staff/{staff_id}/delete")
 def delete_staff(request: Request, staff_id: int,
-                 f_department_id: str = Form(""), f_position: str = Form("")):
+                 f_department_id: str = Form(""), f_position_id: str = Form("")):
     """คนที่เคยมีงานหรือมีประวัติวันลาจะไม่ถูกลบ แต่ปิดการใช้งานแทน
 
     ลบจริงแล้วงานเก่าจะไร้เจ้าของ และ staff_leaves จะถูก CASCADE หายไปทั้งประวัติ
     """
     require_role(request, "manager")
-    keep = {"department_id": f_department_id, "position": f_position}
+    keep = {"department_id": f_department_id, "position_id": f_position_id}
     with get_conn() as conn:
         used = fetchall(conn, "SELECT COUNT(*) AS n FROM activities "
                               "WHERE assignee_id = %s AND NOT is_deleted", (staff_id,))[0]["n"]
@@ -285,6 +284,71 @@ def delete_department(request: Request, department_id: int):
                          ok=f"ฝ่ายนี้มีพนักงาน {used} คน จึงปิดการใช้งานแทนการลบ")
         execute(conn, "DELETE FROM departments WHERE id = %s", (department_id,))
     return _back("/master/departments", ok="ลบฝ่ายแล้ว")
+
+
+# ── ตำแหน่งงาน ───────────────────────────────────────────────
+# เข้าจากปุ่ม "จัดการตำแหน่งงาน" บนหน้าพนักงาน (เหมือนหน้าฝ่าย)
+#
+# `can_assign` คุมว่าตำแหน่งนี้ถูกเลือกเป็น "ผู้รับผิดชอบ" ของกิจกรรมได้ไหม —
+# เก็บที่ตำแหน่ง ไม่ใช่เช็กชื่อในโค้ด เพราะผู้ใช้เปลี่ยนชื่อ/เพิ่มตำแหน่งได้ตลอด
+
+@router.get("/positions")
+def positions_page(request: Request, ok: str = "", err: str = ""):
+    user = require_role(request, "manager")
+    with get_conn() as conn:
+        rows = fetchall(conn, """
+            SELECT p.*,
+                   (SELECT COUNT(*) FROM staff s
+                     WHERE s.position_id = p.id AND s.active) AS staff_n
+              FROM positions p
+             ORDER BY p.sort_order, p.name
+        """)
+        return page(request, user, "master_positions.html", conn=conn, rows=rows)
+
+
+@router.post("/positions/save")
+def save_position(request: Request,
+                  id: str = Form(""), name: str = Form(...),
+                  can_assign: str = Form(""), sort_order: str = Form("0"),
+                  active: str = Form(""), note: str = Form("")):
+    require_role(request, "manager")
+    values = (as_text(name), as_bool(can_assign), as_int(sort_order, 0),
+              as_bool(active), as_text(note))
+    if not values[0]:
+        return _back("/master/positions", err="ต้องกรอกชื่อตำแหน่ง")
+
+    try:
+        with get_conn() as conn:
+            if as_int(id):
+                execute(conn, """
+                    UPDATE positions SET name = %s, can_assign = %s, sort_order = %s,
+                           active = %s, note = %s, updated_at = NOW()
+                     WHERE id = %s
+                """, values + (as_int(id),))
+            else:
+                execute(conn, """
+                    INSERT INTO positions (name, can_assign, sort_order, active, note)
+                    VALUES (%s, %s, %s, %s, %s)
+                """, values)
+    except errors.UniqueViolation:
+        return _back("/master/positions", err=f"มีตำแหน่งชื่อ \"{values[0]}\" อยู่แล้ว")
+    return _back("/master/positions", ok="บันทึกตำแหน่งงานแล้ว")
+
+
+@router.post("/positions/{position_id}/delete")
+def delete_position(request: Request, position_id: int):
+    """ตำแหน่งที่ยังมีคนอยู่จะไม่ถูกลบ แต่ปิดใช้งานแทน — ลบจริงแล้วคนจะหลุดตำแหน่งเงียบๆ"""
+    require_role(request, "manager")
+    with get_conn() as conn:
+        used = fetchall(conn, "SELECT COUNT(*) AS n FROM staff WHERE position_id = %s",
+                        (position_id,))[0]["n"]
+        if used:
+            execute(conn, "UPDATE positions SET active = FALSE, updated_at = NOW() "
+                          "WHERE id = %s", (position_id,))
+            return _back("/master/positions",
+                         ok=f"ตำแหน่งนี้มีพนักงาน {used} คน จึงปิดการใช้งานแทนการลบ")
+        execute(conn, "DELETE FROM positions WHERE id = %s", (position_id,))
+    return _back("/master/positions", ok="ลบตำแหน่งงานแล้ว")
 
 
 # ── ประเภทการลา ──────────────────────────────────────────────

@@ -57,15 +57,19 @@ def _master(conn) -> dict:
     # v2 เฟส D: ทะเบียนมาพร้อมฝ่าย ให้ฟอร์มจัดกลุ่มและ "เลือกทั้งฝ่าย" ได้
     # + ข้อมูลความว่าง (ลา/ประจำจุด/งานอื่น) ให้ฟอร์มติดป้ายต่อคนตามวันที่กรอก
     staff = fetchall(conn, """
-        SELECT s.id, s.name, s.position, s.department_id, s.is_supervisor,
-               d.name AS department_name
-          FROM staff s LEFT JOIN departments d ON d.id = s.department_id
+        SELECT s.id, s.name, s.department_id, s.position_id,
+               d.name AS department_name, p.name AS position,
+               COALESCE(p.can_assign, TRUE) AS can_assign
+          FROM staff s
+          LEFT JOIN departments d ON d.id = s.department_id
+          LEFT JOIN positions p ON p.id = s.position_id
          WHERE s.active
          ORDER BY d.sort_order NULLS LAST, d.name, s.sort_order, s.name
     """)
-    # ช่อง "ผู้รับผิดชอบ" เลือกได้เฉพาะหัวหน้างานขึ้นไป (ผู้ใช้สั่ง 2026-10-02)
-    # ถ้ายังไม่มีใครถูกติ๊กเลย ให้แสดงทุกคนไปก่อน — ช่องว่างเปล่าแปลว่าสร้างงานไม่ได้เลย
-    leads = [x for x in staff if x.get("is_supervisor")] or staff
+    # ช่อง "ผู้รับผิดชอบ" ตัดตำแหน่งที่ตั้งว่า "ไม่รับผิดชอบงาน" ออก (positions.can_assign)
+    # คนที่ยังไม่ระบุตำแหน่งยังขึ้นตามปกติ — ไม่งั้นคนหายจากรายการโดยไม่มีใครรู้ว่าเพราะอะไร
+    # ถ้ากรองแล้วไม่เหลือใครเลย แสดงทุกคนไปก่อน ดีกว่าช่องว่างจนสร้างงานไม่ได้
+    leads = [x for x in staff if x["can_assign"]] or staff
     groups: list[dict] = []
     for s in staff:
         key = s["department_id"] or 0

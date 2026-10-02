@@ -309,8 +309,11 @@ def activities_by_staff(conn, start: date, end: date) -> dict[int, list[dict]]:
 
 def active_staff(conn) -> list[dict]:
     return fetchall(conn, """
-        SELECT s.id, s.name, s.color, s.code, s.department_id, d.name AS department_name
-          FROM staff s LEFT JOIN departments d ON d.id = s.department_id
+        SELECT s.id, s.name, s.color, s.code, s.department_id, d.name AS department_name,
+               p.name AS position
+          FROM staff s
+          LEFT JOIN departments d ON d.id = s.department_id
+          LEFT JOIN positions p ON p.id = s.position_id
          WHERE s.active
          ORDER BY d.sort_order NULLS LAST, d.name, s.sort_order, s.name
     """)

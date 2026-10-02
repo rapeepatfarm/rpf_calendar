@@ -62,14 +62,19 @@
   </template>
   {# แก้วันสิ้นสุด — ผู้ดูแลระบบเท่านั้น · ปุ่มอยู่ตรงที่เขาทำงานจริง (กล่องข้างปฏิทิน)
      เช็คสิทธิ์ซ้ำที่เซิร์ฟเวอร์ใน routers/activities.end_date() #}
+  {# งานที่ยังไม่ปิด: ไม่มีปุ่มลัดแก้วันสิ้นสุด — ให้เข้าหน้ารายละเอียดแล้วใช้ฟอร์มแก้ไข
+     (ผู้ใช้สั่ง 2026-10-02 · ปุ่มลัดในกล่องเล็กทำให้เผลอกดง่ายเกินไป)
+     งานที่ปิดไปแล้วเหลือปุ่มเดียวคือ "แก้ไขประวัติ" ซึ่งชื่อบอกตรงๆ ว่ากำลังแก้ของที่จบไปแล้ว #}
   {% if user.role == 'admin' %}
-  <button class="btn btn-sm" type="button" title="งานยืดออกหรือจบเร็วกว่าที่วางไว้"
-          x-on:click="endAsk = { id: picked.id, title: picked.title, when: picked.when,
-                                 start: picked.date, end: picked.end, closed: picked.closed,
-                                 back: backUrl }">
-    แก้วันสิ้นสุด</button>
+  <template x-if="picked.closed">
+    <button class="btn btn-sm" type="button" title="แก้วันสิ้นสุดของงานที่ปิดไปแล้ว"
+            x-on:click="endAsk = { id: picked.id, title: picked.title, when: picked.when,
+                                   start: picked.date, end: picked.end, closed: true,
+                                   back: backUrl }">
+      แก้ไขประวัติ</button>
+  </template>
   {% endif %}
-  <a class="btn btn-sm" :href="'/activities/' + picked.id">เปิดหน้าเต็ม</a>
+  <a class="btn btn-sm" :href="'/activities/' + picked.id">รายละเอียด</a>
   {# ลบได้เฉพาะหัวหน้างานขึ้นไป — เช็คซ้ำที่เซิร์ฟเวอร์อีกชั้นใน routers/activities.delete()
      ซ่อนปุ่มอย่างเดียวไม่พอ เพราะยิง POST ตรงๆ ได้ #}
   {% if can_manage %}

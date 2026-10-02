@@ -2,10 +2,10 @@
 {% block title %}จัดการพนักงาน · RPF Calendar{% endblock %}
 {% block page_title %}จัดการพนักงาน{% endblock %}
 
-{% set blank = {'id': '', 'name': '', 'code': '', 'department_id': '', 'position': '',
+{% set blank = {'id': '', 'name': '', 'code': '', 'department_id': '', 'position_id': '',
                 'phone': '', 'color': '#2f7de1', 'user_id': '', 'sort_order': 0,
-                'active': True, 'note': '', 'is_supervisor': False} %}
-{% set filtering = flt.department_id or flt.position %}
+                'active': True, 'note': ''} %}
+{% set filtering = flt.department_id or flt.position_id %}
 
 {% block content %}
 <div x-data='{ editing: false, f: {{ blank | tojson }} }'>
@@ -27,10 +27,10 @@
         </option>
         {% endfor %}
       </select>
-      <select name="position" onchange="this.form.submit()" aria-label="กรองตามตำแหน่ง">
+      <select name="position_id" onchange="this.form.submit()" aria-label="กรองตามตำแหน่ง">
         <option value="">ทุกตำแหน่ง</option>
         {% for p in positions %}
-        <option value="{{ p }}" {{ 'selected' if flt.position == p }}>{{ p }}</option>
+        <option value="{{ p.id }}" {{ 'selected' if flt.position_id == p.id }}>{{ p.name }}</option>
         {% endfor %}
       </select>
       {% if filtering %}<a class="btn btn-sm" href="/master/staff">ล้าง</a>{% endif %}
@@ -39,6 +39,7 @@
     <div class="spacer"></div>
     <a class="btn btn-sm" href="/leaves">จัดการวันลา</a>
     <a class="btn btn-sm" href="/master/departments">จัดการฝ่าย</a>
+    <a class="btn btn-sm" href="/master/positions">จัดการตำแหน่งงาน</a>
     <button class="btn btn-primary btn-sm"
             x-on:click='f = {{ blank | tojson }}; editing = true'>+ เพิ่มพนักงาน</button>
   </div>
@@ -64,8 +65,7 @@
             <td class="mono">{{ r.code or '-' }}</td>
             <td style="white-space:nowrap"><i class="swatch" style="background:{{ r.color }}"></i> {{ r.name }}</td>
             <td>{{ r.department_name or '-' }}</td>
-            <td>{{ r.position or '-' }}
-              {%- if r.is_supervisor %} <span class="badge">หัวหน้างาน</span>{% endif %}</td>
+            <td>{{ r.position_name or '-' }}</td>
             <td class="mono">{{ r.phone or '-' }}</td>
             <td>
               {% if r.username %}{{ r.username }}
@@ -82,15 +82,15 @@
                  title="บันทึกวันลาของ {{ r.name }}">กำหนดวันลา</a>
               <button class="btn btn-sm" x-on:click='f = {{ {
                 'id': r.id, 'name': r.name, 'code': r.code,
-                'department_id': r.department_id or '', 'position': r.position,
+                'department_id': r.department_id or '', 'position_id': r.position_id or '',
                 'phone': r.phone, 'color': r.color, 'user_id': r.user_id or '',
                 'sort_order': r.sort_order, 'active': r.active,
-                'note': r.note, 'is_supervisor': r.is_supervisor } | tojson }}; editing = true'>แก้ไข</button>
+                'note': r.note } | tojson }}; editing = true'>แก้ไข</button>
               <form method="post" action="/master/staff/{{ r.id }}/delete"
                     style="display:inline"
                     onsubmit="return confirm('ลบ {{ r.name }} ออกจากทะเบียน?')">
                 <input type="hidden" name="f_department_id" value="{{ flt.department_id or '' }}">
-                <input type="hidden" name="f_position" value="{{ flt.position }}">
+                <input type="hidden" name="f_position_id" value="{{ flt.position_id or '' }}">
                 <button class="btn btn-sm btn-danger" type="submit">ลบ</button>
               </form>
             </td>
@@ -123,7 +123,7 @@
           <input type="hidden" name="id" :value="f.id">
           {# คงตัวกรองไว้หลังบันทึก จะได้ไม่เด้งกลับไปเห็นทุกฝ่ายรวมกัน #}
           <input type="hidden" name="f_department_id" value="{{ flt.department_id or '' }}">
-          <input type="hidden" name="f_position" value="{{ flt.position }}">
+          <input type="hidden" name="f_position_id" value="{{ flt.position_id or '' }}">
           <div class="form-grid">
             <div class="field">
               <label>รหัสพนักงาน</label>
@@ -145,13 +145,16 @@
                 {% endfor %}
               </select>
             </div>
+            {# ตำแหน่งมาจากทะเบียน (ปุ่ม "จัดการตำแหน่งงาน") — ตำแหน่งที่ตั้งว่า
+               "เป็นผู้รับผิดชอบงานได้" เท่านั้นที่จะขึ้นในช่องผู้รับผิดชอบของกิจกรรม #}
             <div class="field">
               <label>ตำแหน่ง</label>
-              <input name="position" x-model="f.position" maxlength="60"
-                     list="position-list" placeholder="เช่น หัวหน้าเล้า A">
-              <datalist id="position-list">
-                {% for p in positions %}<option value="{{ p }}">{% endfor %}
-              </datalist>
+              <select name="position_id" x-model="f.position_id">
+                <option value="">ยังไม่ระบุ</option>
+                {% for p in positions if p.active %}
+                <option value="{{ p.id }}">{{ p.name }}{{ '' if p.can_assign else ' (ไม่รับผิดชอบงาน)' }}</option>
+                {% endfor %}
+              </select>
             </div>
           </div>
           <div class="form-grid">
@@ -187,19 +190,7 @@
             <label>หมายเหตุ</label>
             <input name="note" x-model="f.note" maxlength="200">
           </div>
-          {# ใครเป็นหัวหน้างาน — ช่อง "ผู้รับผิดชอบ" ในฟอร์มกิจกรรมและแผนงานประจำ
-             จะเลือกได้เฉพาะคนที่ติ๊กข้อนี้ (ผู้ใช้สั่ง 2026-10-02) #}
           <label class="check">
-            <input type="checkbox" name="is_supervisor" value="1" x-model="f.is_supervisor">
-            <span>
-              เป็นหัวหน้างานขึ้นไป
-              <div class="hint" style="margin-top:3px">
-                ติ๊กแล้วจะถูกเลือกเป็น <b>ผู้รับผิดชอบ</b> ของกิจกรรมได้ ·
-                ส่วนการเป็น <b>ผู้ปฏิบัติงาน</b> เลือกได้ทุกคนอยู่แล้วไม่ว่าจะติ๊กหรือไม่
-              </div>
-            </span>
-          </label>
-          <label class="check" style="margin-top:12px">
             <input type="checkbox" name="active" value="1" x-model="f.active">
             <span>ยังทำงานอยู่ (ปิดแล้วจะไม่ขึ้นในตัวเลือกผู้รับผิดชอบ/ผู้ปฏิบัติงาน)</span>
           </label>
