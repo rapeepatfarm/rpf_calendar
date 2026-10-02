@@ -49,9 +49,10 @@
       <div class="field">
         <label for="assignee_id">ผู้รับผิดชอบ</label>
         {% if user.role in ('admin', 'manager') %}
+        {# เฉพาะหัวหน้างานขึ้นไป (staff.is_supervisor) — ติ๊กได้ที่หน้าจัดการพนักงาน #}
         <select id="assignee_id" name="assignee_id">
           <option value="">ยังไม่ระบุ</option>
-          {% for s in staff %}
+          {% for s in (leads or staff) %}
           <option value="{{ s.id }}"
                   {{ 'selected' if editing and activity.assignee_id == s.id }}>
             {{ s.name }}{{ ' · ' ~ s.position if s.position }}
@@ -78,49 +79,6 @@
       </div>
     </div>
 
-    {% if user.role in ('admin', 'manager') and staff %}
-    {# ผู้ปฏิบัติงาน (= activity_helpers เดิม, §29.3) กดเริ่ม/สิ้นสุดงานนี้ได้เหมือนผู้รับผิดชอบหลัก
-       และเห็นใน "งานของฉัน" · จัดกลุ่มตามฝ่าย เลือกทั้งฝ่ายได้ — ตอนบันทึกแตกเป็นรายคน
-       · ป้ายความว่างคำนวณจากวันที่กรอก (ลา/ประจำจุด/มีงานอื่น) — ลาตลอดช่วงงานเลือกไม่ได้
-       และเซิร์ฟเวอร์ปฏิเสธซ้ำอีกชั้น (§29.5) #}
-    {% set chosen = activity.helper_ids if editing and activity.helper_ids else [] %}
-    {# ถ้า router ยังเป็นตัวเก่า (ช่วงรอรีสตาร์ต) ให้ทุกคนอยู่กลุ่มเดียว ไม่ให้ช่องเลือกหายไปเฉยๆ #}
-    {% set groups = staff_groups if staff_groups else [{'id': 0, 'name': 'ทุกคน', 'staff': staff}] %}
-    <div class="field" style="margin-top:14px; margin-bottom:0"
-         x-data='workerPicker({
-           chosen: {{ chosen | map("string") | list | tojson }},
-           avail: {{ (availability or {}) | tojson }},
-           activityId: {{ activity.id if editing else 0 }},
-           start: "{{ activity.planned_date if editing else default_date }}",
-           end: "{{ activity.planned_end_date if editing else default_date }}"
-         })'
-         x-on:dates-changed.window="setRange($event.detail.start, $event.detail.end)">
-      <label>ผู้ปฏิบัติงาน (เลือกได้หลายคน หรือทั้งฝ่าย)</label>
-      {% for g in groups %}
-      <div class="chip-group">
-        <div class="chip-group-head">
-          <span>{{ g.name }}</span>
-          <button type="button" class="btn btn-sm" x-on:click='toggleDept({{ g.staff | map(attribute="id") | list | tojson }})'
-                  x-text='allPicked({{ g.staff | map(attribute="id") | list | tojson }}) ? "เอาออกทั้งฝ่าย" : "เลือกทั้งฝ่าย"'></button>
-        </div>
-        <div class="chip-picker">
-          {% for s in g.staff %}
-          <label class="chip-pick" :class="{ 'is-away': state({{ s.id }}).away, 'is-warn': state({{ s.id }}).warn }"
-                 :title="state({{ s.id }}).title">
-            <input type="checkbox" name="helper_ids" value="{{ s.id }}" x-model="picked"
-                   :disabled="state({{ s.id }}).away">
-            <span>{{ s.name }}<small x-show="state({{ s.id }}).label" x-text="state({{ s.id }}).label"></small></span>
-          </label>
-          {% endfor %}
-        </div>
-      </div>
-      {% endfor %}
-      <div class="hint">
-        คนที่เลือกไว้จะกดเริ่ม/สิ้นสุดงานนี้ได้ด้วย และเห็นงานนี้ใน "งานของฉัน" ·
-        <b>ลา</b> ตลอดช่วงงานเลือกไม่ได้ · ลาบางวัน / ประจำจุดงาน / มีงานอื่นวันเดียวกัน แค่บอกไว้ ยังเลือกได้
-      </div>
-    </div>
-    {% endif %}
   </div>
 </div>
 
@@ -231,6 +189,70 @@
     </div>{# /x-show needsStart — ไม่ต้องกดเริ่มก็ไม่มีเรื่องงานค้างให้ตั้ง #}
   </div>
 </div>
+
+{# ── ผู้ปฏิบัติงาน ── อยู่ล่างสุดของฟอร์มและพับไว้ก่อน (ผู้ใช้สั่ง 2026-10-02)
+   ฟาร์มมีพนักงานหลายสิบคน ถ้ากางทุกชื่อตั้งแต่แรกฟอร์มจะรกจนหาช่องอื่นไม่เจอ
+   รายชื่อจะโผล่เมื่อผู้ใช้เลือกฝ่ายก่อน · ชื่อที่เลือกไว้แล้วแสดงตลอดไม่ว่าจะเลือกฝ่ายไหน
+   ไม่งั้นคนที่ติ๊กไว้จะหายจากสายตาแล้วเผลอกดบันทึกทั้งที่ยังอยู่ในฟอร์ม #}
+{% if user.role in ('admin', 'manager') and staff %}
+{% set chosen = activity.helper_ids if editing and activity.helper_ids else [] %}
+{# ถ้า router ยังเป็นตัวเก่า (ช่วงรอรีสตาร์ต) ให้ทุกคนอยู่กลุ่มเดียว ไม่ให้ช่องเลือกหายไปเฉยๆ #}
+{% set groups = staff_groups if staff_groups else [{'id': 0, 'name': 'ทุกคน', 'staff': staff}] %}
+<div class="card"
+     x-data='workerPicker({
+       chosen: {{ chosen | map("string") | list | tojson }},
+       avail: {{ (availability or {}) | tojson }},
+       activityId: {{ activity.id if editing else 0 }},
+       start: "{{ activity.planned_date if editing else default_date }}",
+       end: "{{ activity.planned_end_date if editing else default_date }}"
+     })'
+     x-on:dates-changed.window="setRange($event.detail.start, $event.detail.end)">
+  <div class="card-head">
+    <h2 class="card-title">ผู้ปฏิบัติงาน</h2>
+    <span class="badge" x-show="picked.length" x-text="'เลือกไว้ ' + picked.length + ' คน'"></span>
+    <div class="spacer"></div>
+    <select x-model="dept" style="width:auto; min-width:170px">
+      <option value="">— เลือกฝ่ายเพื่อดูรายชื่อ —</option>
+      {% for g in groups %}
+      <option value="{{ g.id }}">{{ g.name }} ({{ g.staff | length }})</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="card-body">
+    {% for g in groups %}
+    {# แสดงกลุ่มนี้เมื่อผู้ใช้เลือกฝ่ายนี้ หรือมีคนในกลุ่มนี้ถูกติ๊กไว้แล้ว #}
+    <div class="chip-group"
+         x-show='dept === "{{ g.id }}" || hasPicked({{ g.staff | map(attribute="id") | list | tojson }})'
+         x-cloak>
+      <div class="chip-group-head">
+        <span>{{ g.name }}</span>
+        <button type="button" class="btn btn-sm" x-on:click='toggleDept({{ g.staff | map(attribute="id") | list | tojson }})'
+                x-text='allPicked({{ g.staff | map(attribute="id") | list | tojson }}) ? "เอาออกทั้งฝ่าย" : "เลือกทั้งฝ่าย"'></button>
+      </div>
+      <div class="chip-picker">
+        {% for s in g.staff %}
+        <label class="chip-pick" :class="{ 'is-away': state({{ s.id }}).away, 'is-warn': state({{ s.id }}).warn }"
+               :title="state({{ s.id }}).title"
+               x-show='dept === "{{ g.id }}" || picked.includes("{{ s.id }}")'>
+          <input type="checkbox" name="helper_ids" value="{{ s.id }}" x-model="picked"
+                 :disabled="state({{ s.id }}).away">
+          <span>{{ s.name }}<small x-show="state({{ s.id }}).label" x-text="state({{ s.id }}).label"></small></span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+    <div class="hint" x-show="!dept && picked.length === 0">
+      เลือกฝ่ายจากช่องด้านบนก่อน แล้วรายชื่อในฝ่ายนั้นจะขึ้นมาให้ติ๊ก ·
+      งานที่ไม่ต้องระบุผู้ปฏิบัติงานก็ข้ามส่วนนี้ไปได้เลย
+    </div>
+    <div class="hint" x-show="dept || picked.length">
+      คนที่เลือกไว้จะกดเริ่ม/สิ้นสุดงานนี้ได้ด้วย และเห็นงานนี้ใน "งานของฉัน" ·
+      <b>ลา</b> ตลอดช่วงงานเลือกไม่ได้ · ลาบางวัน / ประจำจุดงาน / มีงานอื่นวันเดียวกัน แค่บอกไว้ ยังเลือกได้
+    </div>
+  </div>
+</div>
+{% endif %}
 
 <div class="form-actions">
   <button class="btn btn-primary" type="submit">

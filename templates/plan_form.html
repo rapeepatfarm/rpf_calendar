@@ -35,10 +35,11 @@
         </select>
       </div>
       <div class="field">
+        {# เฉพาะหัวหน้างานขึ้นไป เหมือนฟอร์มกิจกรรม #}
         <label for="assignee_id">ผู้รับผิดชอบ</label>
         <select id="assignee_id" name="assignee_id">
           <option value="">ยังไม่ระบุ</option>
-          {% for s in staff %}
+          {% for s in (leads or staff) %}
           <option value="{{ s.id }}"
                   {{ 'selected' if editing and series.assignee_id == s.id }}>
             {{ s.name }}{{ ' · ' ~ s.position if s.position }}

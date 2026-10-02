@@ -632,9 +632,14 @@ def set_end_date(conn, activity: dict, user: dict, new_date: date) -> str | None
     จากแผนก่อนถูกเลื่อนอัตโนมัติเสมอ
 
     ไม่ต้องเช็กการชน `UNIQUE (series_id, planned_date)` เพราะกุญแจนั้นคุมเฉพาะวันเริ่ม
+
+    **แก้งานที่ปิดไปแล้วได้ด้วย** (ผู้ใช้สั่ง 2026-10-02) — เคสจริงคืองานลากยาวกว่าแผน
+    แล้วมากดสิ้นสุดทีหลัง ถึงค่อยรู้ว่าจริงๆ จบวันไหน · แต่ต้องรู้ตัวว่า
+    **มันเปลี่ยนผลในรายงาน** เพราะ reports ตัดสินตรงแผน/ช้าจาก `_PLAN_END`
+    (= `COALESCE(planned_end_date_original, planned_end_date)`) · ถ้างานนั้นไม่เคยถูก
+    เลื่อนอัตโนมัติ `_original` จะเป็น NULL แล้ววันใหม่จะกลายเป็นเกณฑ์ตัดสินทันที
+    จึงเขียนไว้ใน log ให้ชัดว่าแก้ย้อนหลังหลังปิดงาน และกล่องบนหน้าจอก็เตือนก่อนกด
     """
-    if activity["status"] in CLOSED_STATUSES:
-        return f"งานนี้{STATUS_LABELS[activity['status']]}ไปแล้ว แก้วันสิ้นสุดไม่ได้"
     if new_date < activity["planned_date"]:
         return (f"วันสิ้นสุดต้องไม่มาก่อนวันเริ่ม "
                 f"({thaidate.short(activity['planned_date'])})")
@@ -654,8 +659,11 @@ def set_end_date(conn, activity: dict, user: dict, new_date: date) -> str | None
     """, (new_date, overridden, user["id"], activity["id"]))
 
     days = (new_date - activity["planned_date"]).days + 1
+    closed = activity["status"] in CLOSED_STATUSES
     detail = (f"แก้วันสิ้นสุด {thaidate.short(old_end)} → {thaidate.short(new_date)} "
               f"(รวมเป็น {days} วัน)")
+    if closed:
+        detail += f" · แก้ย้อนหลังหลังงาน{STATUS_LABELS[activity['status']]}แล้ว — มีผลกับรายงาน"
     if overridden:
         detail += " · วันที่นี้จะถูกส่งกลับไปใช้ที่โปรแกรมต้นทาง"
     _log(conn, activity["id"], "rescheduled", user, None, None, detail)

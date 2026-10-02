@@ -4,7 +4,7 @@
 
 {% set blank = {'id': '', 'name': '', 'code': '', 'department_id': '', 'position': '',
                 'phone': '', 'color': '#2f7de1', 'user_id': '', 'sort_order': 0,
-                'active': True, 'note': ''} %}
+                'active': True, 'note': '', 'is_supervisor': False} %}
 {% set filtering = flt.department_id or flt.position %}
 
 {% block content %}
@@ -64,7 +64,8 @@
             <td class="mono">{{ r.code or '-' }}</td>
             <td style="white-space:nowrap"><i class="swatch" style="background:{{ r.color }}"></i> {{ r.name }}</td>
             <td>{{ r.department_name or '-' }}</td>
-            <td>{{ r.position or '-' }}</td>
+            <td>{{ r.position or '-' }}
+              {%- if r.is_supervisor %} <span class="badge">หัวหน้างาน</span>{% endif %}</td>
             <td class="mono">{{ r.phone or '-' }}</td>
             <td>
               {% if r.username %}{{ r.username }}
@@ -84,7 +85,7 @@
                 'department_id': r.department_id or '', 'position': r.position,
                 'phone': r.phone, 'color': r.color, 'user_id': r.user_id or '',
                 'sort_order': r.sort_order, 'active': r.active,
-                'note': r.note } | tojson }}; editing = true'>แก้ไข</button>
+                'note': r.note, 'is_supervisor': r.is_supervisor } | tojson }}; editing = true'>แก้ไข</button>
               <form method="post" action="/master/staff/{{ r.id }}/delete"
                     style="display:inline"
                     onsubmit="return confirm('ลบ {{ r.name }} ออกจากทะเบียน?')">
@@ -186,7 +187,19 @@
             <label>หมายเหตุ</label>
             <input name="note" x-model="f.note" maxlength="200">
           </div>
+          {# ใครเป็นหัวหน้างาน — ช่อง "ผู้รับผิดชอบ" ในฟอร์มกิจกรรมและแผนงานประจำ
+             จะเลือกได้เฉพาะคนที่ติ๊กข้อนี้ (ผู้ใช้สั่ง 2026-10-02) #}
           <label class="check">
+            <input type="checkbox" name="is_supervisor" value="1" x-model="f.is_supervisor">
+            <span>
+              เป็นหัวหน้างานขึ้นไป
+              <div class="hint" style="margin-top:3px">
+                ติ๊กแล้วจะถูกเลือกเป็น <b>ผู้รับผิดชอบ</b> ของกิจกรรมได้ ·
+                ส่วนการเป็น <b>ผู้ปฏิบัติงาน</b> เลือกได้ทุกคนอยู่แล้วไม่ว่าจะติ๊กหรือไม่
+              </div>
+            </span>
+          </label>
+          <label class="check" style="margin-top:12px">
             <input type="checkbox" name="active" value="1" x-model="f.active">
             <span>ยังทำงานอยู่ (ปิดแล้วจะไม่ขึ้นในตัวเลือกผู้รับผิดชอบ/ผู้ปฏิบัติงาน)</span>
           </label>

@@ -11,6 +11,7 @@
 {%- macro end_payload(a, back) -%}
 {{ {'id': a.id, 'title': a.title, 'when': d_span(a.planned_date, a.planned_end_date),
     'start': a.planned_date.isoformat(), 'end': a.planned_end_date.isoformat(),
+    'closed': a.status in ('done', 'cancelled', 'missed'),
     'back': back} | tojson }}
 {%- endmacro -%}
 

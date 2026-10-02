@@ -57,11 +57,15 @@ def _master(conn) -> dict:
     # v2 เฟส D: ทะเบียนมาพร้อมฝ่าย ให้ฟอร์มจัดกลุ่มและ "เลือกทั้งฝ่าย" ได้
     # + ข้อมูลความว่าง (ลา/ประจำจุด/งานอื่น) ให้ฟอร์มติดป้ายต่อคนตามวันที่กรอก
     staff = fetchall(conn, """
-        SELECT s.id, s.name, s.position, s.department_id, d.name AS department_name
+        SELECT s.id, s.name, s.position, s.department_id, s.is_supervisor,
+               d.name AS department_name
           FROM staff s LEFT JOIN departments d ON d.id = s.department_id
          WHERE s.active
          ORDER BY d.sort_order NULLS LAST, d.name, s.sort_order, s.name
     """)
+    # ช่อง "ผู้รับผิดชอบ" เลือกได้เฉพาะหัวหน้างานขึ้นไป (ผู้ใช้สั่ง 2026-10-02)
+    # ถ้ายังไม่มีใครถูกติ๊กเลย ให้แสดงทุกคนไปก่อน — ช่องว่างเปล่าแปลว่าสร้างงานไม่ได้เลย
+    leads = [x for x in staff if x.get("is_supervisor")] or staff
     groups: list[dict] = []
     for s in staff:
         key = s["department_id"] or 0
@@ -70,6 +74,7 @@ def _master(conn) -> dict:
         groups[-1]["staff"].append(s)
     return {
         "staff": staff,
+        "leads": leads,
         "staff_groups": groups,
         "availability": staffing.availability_data(conn),
         "categories": cats,

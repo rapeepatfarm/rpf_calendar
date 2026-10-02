@@ -26,9 +26,13 @@ def _back(ok: str = "", err: str = "") -> RedirectResponse:
 
 
 def _master(conn) -> dict:
+    staff = fetchall(conn, "SELECT id, name, position, is_supervisor FROM staff "
+                           "WHERE active ORDER BY sort_order, name")
     return {
-        "staff": fetchall(conn, "SELECT id, name, position FROM staff "
-                                "WHERE active ORDER BY sort_order, name"),
+        "staff": staff,
+        # ช่องผู้รับผิดชอบเลือกได้เฉพาะหัวหน้างานขึ้นไป เกณฑ์เดียวกับฟอร์มกิจกรรม
+        # (ไม่มีใครถูกติ๊ก = แสดงทุกคน กันช่องว่างเปล่า)
+        "leads": [x for x in staff if x.get("is_supervisor")] or staff,
         "categories": fetchall(conn, "SELECT id, name, color FROM activity_categories "
                                      "WHERE active ORDER BY sort_order, name"),
     }

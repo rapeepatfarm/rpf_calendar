@@ -261,7 +261,9 @@
     {% endif %}
     {# แก้วันสิ้นสุดอย่างเดียว — ผู้ดูแลระบบเท่านั้นตามที่ผู้ใช้กำหนด
        (ตรวจซ้ำที่ routers/activities.end_date ด้วย require_admin ไม่ใช่แค่ซ่อนปุ่ม) #}
-    {% if user.role == 'admin' and a.status not in ('done', 'cancelled', 'missed') %}
+    {# ขึ้นทุกสถานะรวมถึงงานที่ปิดแล้ว — เคสจริงคืองานลากยาวกว่าแผน พอกดสิ้นสุดถึงรู้ว่าจบวันไหน
+       (ผู้ใช้สั่ง 2026-10-02) · กล่องยืนยันจะเตือนว่ามีผลกับรายงานถ้างานปิดไปแล้ว #}
+    {% if user.role == 'admin' %}
     <button class="btn" type="button" title="งานยืดออกหรือจบเร็วกว่าที่วางไว้"
             x-on:click='endAsk = {{ m.end_payload(a, request.url.path) }}'>
       📅 แก้วันสิ้นสุด

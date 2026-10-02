@@ -63,12 +63,11 @@
   {# แก้วันสิ้นสุด — ผู้ดูแลระบบเท่านั้น · ปุ่มอยู่ตรงที่เขาทำงานจริง (กล่องข้างปฏิทิน)
      เช็คสิทธิ์ซ้ำที่เซิร์ฟเวอร์ใน routers/activities.end_date() #}
   {% if user.role == 'admin' %}
-  <template x-if="!picked.closed">
-    <button class="btn btn-sm" type="button" title="งานยืดออกหรือจบเร็วกว่าที่วางไว้"
-            x-on:click="endAsk = { id: picked.id, title: picked.title, when: picked.when,
-                                   start: picked.date, end: picked.end, back: backUrl }">
-      แก้วันสิ้นสุด</button>
-  </template>
+  <button class="btn btn-sm" type="button" title="งานยืดออกหรือจบเร็วกว่าที่วางไว้"
+          x-on:click="endAsk = { id: picked.id, title: picked.title, when: picked.when,
+                                 start: picked.date, end: picked.end, closed: picked.closed,
+                                 back: backUrl }">
+    แก้วันสิ้นสุด</button>
   {% endif %}
   <a class="btn btn-sm" :href="'/activities/' + picked.id">เปิดหน้าเต็ม</a>
   {# ลบได้เฉพาะหัวหน้างานขึ้นไป — เช็คซ้ำที่เซิร์ฟเวอร์อีกชั้นใน routers/activities.delete()

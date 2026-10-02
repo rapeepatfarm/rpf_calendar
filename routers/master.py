@@ -162,14 +162,15 @@ def save_staff(request: Request,
                position: str = Form(""), phone: str = Form(""),
                color: str = Form("#2f7de1"), user_id: str = Form(""),
                sort_order: str = Form("0"), active: str = Form(""),
-               note: str = Form(""),
+               note: str = Form(""), is_supervisor: str = Form(""),
                f_department_id: str = Form(""), f_position: str = Form("")):
     require_role(request, "manager")
     keep = {"department_id": f_department_id, "position": f_position}
     values = (as_text(name), as_text(code).upper(), as_int(department_id),
               as_text(position), as_text(phone),
               as_text(color) or "#2f7de1", as_int(user_id),
-              as_int(sort_order, 0), as_bool(active), as_text(note))
+              as_int(sort_order, 0), as_bool(active), as_text(note),
+              as_bool(is_supervisor))
     if not values[0]:
         return _back("/master/staff", err="ต้องกรอกชื่อพนักงาน", keep=keep)
 
@@ -180,14 +181,14 @@ def save_staff(request: Request,
                     UPDATE staff SET name = %s, code = %s, department_id = %s,
                            position = %s, phone = %s, color = %s,
                            user_id = %s, sort_order = %s, active = %s, note = %s,
-                           updated_at = NOW()
+                           is_supervisor = %s, updated_at = NOW()
                      WHERE id = %s
                 """, values + (as_int(id),))
             else:
                 execute(conn, """
                     INSERT INTO staff (name, code, department_id, position, phone, color,
-                                       user_id, sort_order, active, note)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                       user_id, sort_order, active, note, is_supervisor)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, values)
     except errors.UniqueViolation as e:
         # มี unique สองตัวบนตารางนี้ ต้องบอกให้ถูกว่าชนตัวไหน

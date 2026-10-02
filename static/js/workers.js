@@ -24,6 +24,7 @@ function workerPicker(data) {
 
   return {
     picked: (data.chosen || []).map(String),
+    dept: '',                       // ฝ่ายที่กางรายชื่ออยู่ — ว่าง = ยังไม่กางใคร
     avail: data.avail || {},
     start: data.start || '',
     end: data.end || data.start || '',
@@ -57,6 +58,12 @@ function workerPicker(data) {
         label: notes.length ? ' · ' + notes.join(' · ') : '',
         title: other ? ('มีงานอื่นช่วงนี้: ' + other.title) : (notes.join(' · ')),
       };
+    },
+
+    /** มีใครในกลุ่มนี้ถูกติ๊กไว้ไหม — ใช้ให้กลุ่มนั้นยังกางอยู่แม้จะเปลี่ยนฝ่ายไปแล้ว
+     *  ไม่งั้นคนที่ติ๊กไว้จะหายจากสายตา แล้วผู้ใช้เผลอกดบันทึกทั้งที่ยังอยู่ในฟอร์ม */
+    hasPicked(ids) {
+      return ids.some(id => this.picked.includes(String(id)));
     },
 
     allPicked(ids) {

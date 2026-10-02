@@ -197,6 +197,46 @@
           </template>
         </div>
 
+        <div class="staff-sec">
+          <div class="staff-sec-head">
+            <span x-text="dayPosts.length || dayWorking.length ? 'ว่าง' : 'มาทำงาน'"></span>
+            <span class="panel-tab-n" x-text="dayFree.length + ' คน'"></span>
+          </div>
+          <template x-if="dayFree.length === 0">
+            <div class="staff-empty" x-text="dayPosts.length || dayWorking.length
+                  ? 'ไม่มีใครว่าง — ทุกคนประจำจุด ติดกิจกรรม หรือลา' : 'ไม่มีพนักงานในทะเบียน'"></div>
+          </template>
+          <template x-for="g in freeGroups" :key="g.name">
+            <div class="staff-group">
+              <div class="staff-group-name" x-text="g.name"></div>
+              <div class="chip-list">
+                <template x-for="s in g.staff" :key="s.id">
+                  <span class="chip"><i class="swatch" :style="'background:' + s.color"></i><span x-text="s.name"></span></span>
+                </template>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        {# ── ติดกิจกรรม — คนที่ถูกมอบหมายงานในวันนั้น (ผู้รับผิดชอบหรือผู้ปฏิบัติงาน) ── #}
+        <template x-if="dayWorking.length">
+          <div class="staff-sec">
+            <div class="staff-sec-head">
+              <span>ติดกิจกรรม</span>
+              <span class="panel-tab-n" x-text="dayWorking.length + ' คน'"></span>
+            </div>
+            <template x-for="w in dayWorking" :key="'w' + w.id">
+              <div class="staff-work">
+                <i class="swatch" :style="'background:' + w.color"></i>
+                <span class="staff-work-main">
+                  <span class="staff-work-name" x-text="w.name"></span>
+                  <span class="staff-work-sub" x-text="w.activities.map(a => a.title).join(' · ')"></span>
+                </span>
+              </div>
+            </template>
+          </div>
+        </template>
+
         {# ── ประจำจุดงาน (เฟส C) — มีเมื่อสร้างจุดงานไว้แล้ว ── #}
         <template x-if="dayPosts.length">
           <div class="staff-sec">
@@ -233,46 +273,6 @@
                style="margin-top:4px">ไปหน้าหน้าที่ประจำเพื่อระบุคนแทน</a>
           </div>
         </template>
-
-        {# ── ติดกิจกรรม — คนที่ถูกมอบหมายงานในวันนั้น (ผู้รับผิดชอบหรือผู้ปฏิบัติงาน) ── #}
-        <template x-if="dayWorking.length">
-          <div class="staff-sec">
-            <div class="staff-sec-head">
-              <span>ติดกิจกรรม</span>
-              <span class="panel-tab-n" x-text="dayWorking.length + ' คน'"></span>
-            </div>
-            <template x-for="w in dayWorking" :key="'w' + w.id">
-              <div class="staff-work">
-                <i class="swatch" :style="'background:' + w.color"></i>
-                <span class="staff-work-main">
-                  <span class="staff-work-name" x-text="w.name"></span>
-                  <span class="staff-work-sub" x-text="w.activities.map(a => a.title).join(' · ')"></span>
-                </span>
-              </div>
-            </template>
-          </div>
-        </template>
-
-        <div class="staff-sec">
-          <div class="staff-sec-head">
-            <span x-text="dayPosts.length || dayWorking.length ? 'ว่าง' : 'มาทำงาน'"></span>
-            <span class="panel-tab-n" x-text="dayFree.length + ' คน'"></span>
-          </div>
-          <template x-if="dayFree.length === 0">
-            <div class="staff-empty" x-text="dayPosts.length || dayWorking.length
-                  ? 'ไม่มีใครว่าง — ทุกคนประจำจุด ติดกิจกรรม หรือลา' : 'ไม่มีพนักงานในทะเบียน'"></div>
-          </template>
-          <template x-for="g in freeGroups" :key="g.name">
-            <div class="staff-group">
-              <div class="staff-group-name" x-text="g.name"></div>
-              <div class="chip-list">
-                <template x-for="s in g.staff" :key="s.id">
-                  <span class="chip"><i class="swatch" :style="'background:' + s.color"></i><span x-text="s.name"></span></span>
-                </template>
-              </div>
-            </div>
-          </template>
-        </div>
 
         <a class="btn btn-block" x-show="canManage" style="margin-top:10px"
            :href="leaveAddUrl">+ บันทึกการลา</a>
