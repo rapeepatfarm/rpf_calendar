@@ -45,7 +45,20 @@
               {% endif %}
             </td>
             <td>{{ r.assignee_name or '-' }}</td>
-            <td>{{ d_short(r.next_on) if r.next_on else '-' }}</td>
+            <td style="white-space:nowrap">
+              {% if r.next_on %}
+                {{ d_short(r.next_on) }}
+                {% if r.next_late %}<span class="badge late">ค้าง</span>{% endif %}
+                {% if r.after_next_on %}
+                <div class="faint" style="font-size:11.5px; margin-top:2px"
+                     {% if r.after_next_guess %}title="ประมาณจากคาบของแผน — วันจริงขึ้นกับว่ารอบนี้เสร็จเมื่อไร"{% endif %}>
+                  แล้ว{{ 'ประมาณ' if r.after_next_guess }} {{ d_short(r.after_next_on) }}
+                </div>
+                {% elif r.anchor_mode == 'after_done' and r.active %}
+                <div class="faint" style="font-size:11.5px; margin-top:2px">รอบถัดไปรอปิดรอบนี้ก่อน</div>
+                {% endif %}
+              {% else %}-{% endif %}
+            </td>
             <td class="num">{{ r.made_n }}</td>
             <td>
               {% if r.active %}<span class="badge st-done">เปิดใช้</span>

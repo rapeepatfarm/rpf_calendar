@@ -45,6 +45,33 @@ def _load(conn, series_id: int) -> dict:
     return row
 
 
+def _add_next_rounds(row: dict) -> None:
+    """เติม "รอบถัดไป" ให้หน้ารายการแผนงาน — สองรอบข้างหน้า ไม่ใช่รอบเดียว
+
+    ผู้ใช้ขอ (2026-10-02) ให้เห็นรอบถัดไปด้วย "ถึงแม้จะเป็นแค่แผน" · เหตุที่ขอเพราะ
+    โหมด `after_done` วางล่วงหน้าได้ครั้งละรอบเดียว (วันของรอบถัดไปขึ้นกับว่ารอบนี้เสร็จเมื่อไร)
+    เปิดหน้านี้มาจึงเห็นแค่รอบเดียวแล้วไม่รู้ว่าถัดไปประมาณไหน
+
+      · โหมด fixed      → รอบถัดจากนั้นมีอยู่จริงในตารางแล้ว เอามาแสดงตรงๆ
+      · โหมด after_done → ยังไม่มีของจริง จึง **ประมาณการ** จากวันจบของรอบที่ค้างอยู่
+                          + คาบของแผน แล้วติดธง `after_next_guess` ให้หน้าจอบอกว่าเป็นค่าประมาณ
+                          (ถ้าโชว์เฉยๆ โดยไม่บอก จะกลายเป็นสัญญาว่าจะเกิดวันนั้นแน่ๆ ซึ่งไม่จริง)
+    """
+    row["next_on"] = row.get("next_on") or row.get("open_on")   # รอบค้างก็ถือเป็นรอบถัดไป
+    row["next_late"] = bool(row.get("open_on") and row["open_on"] < thaidate.today())
+    row["after_next_guess"] = False
+
+    if row.get("after_next_on") or not row["active"]:
+        return
+    if row.get("anchor_mode") != recurrence.ANCHOR_AFTER_DONE:
+        return
+    anchor = row.get("open_end") or row.get("open_on")
+    if not anchor:
+        return
+    row["after_next_on"] = recurrence.next_after(row, anchor, row.get("made_n") or 0)
+    row["after_next_guess"] = True
+
+
 @router.get("")
 def plans_page(request: Request, ok: str = "", err: str = ""):
     user = require_role(request, "manager")
@@ -56,7 +83,22 @@ def plans_page(request: Request, ok: str = "", err: str = ""):
                      WHERE a.series_id = s.id AND NOT a.is_deleted) AS made_n,
                    (SELECT MIN(a.planned_date) FROM activities a
                      WHERE a.series_id = s.id AND NOT a.is_deleted
-                       AND a.status = 'planned' AND a.planned_date >= CURRENT_DATE) AS next_on
+                       AND a.status = 'planned' AND a.planned_date >= CURRENT_DATE) AS next_on,
+                   -- รอบที่ยังไม่ปิดที่เร็วที่สุด "รวมของที่เลยกำหนดมาแล้ว" — คอลัมน์ข้างบน
+                   -- ตัดของค้างทิ้ง ทำให้แผนที่มีรอบค้างอยู่ขึ้นว่าไม่มีครั้งถัดไป ทั้งที่มี
+                   (SELECT MIN(a.planned_date) FROM activities a
+                     WHERE a.series_id = s.id AND NOT a.is_deleted
+                       AND a.status IN ('planned', 'in_progress')) AS open_on,
+                   (SELECT MIN(a.planned_end_date) FROM activities a
+                     WHERE a.series_id = s.id AND NOT a.is_deleted
+                       AND a.status IN ('planned', 'in_progress')) AS open_end,
+                   -- รอบถัดจากรอบที่ใกล้ที่สุด (โหมด fixed วางล่วงหน้าไว้แล้วจึงมีของจริง)
+                   (SELECT MIN(a.planned_date) FROM activities a
+                     WHERE a.series_id = s.id AND NOT a.is_deleted AND a.status = 'planned'
+                       AND a.planned_date > (
+                            SELECT MIN(b.planned_date) FROM activities b
+                             WHERE b.series_id = s.id AND NOT b.is_deleted
+                               AND b.status IN ('planned', 'in_progress'))) AS after_next_on
               FROM activity_series s
               LEFT JOIN activity_categories c ON c.id = s.category_id
               LEFT JOIN staff st ON st.id = s.assignee_id
@@ -64,6 +106,7 @@ def plans_page(request: Request, ok: str = "", err: str = ""):
         """)
         for row in rows:
             row["rule_text"] = recurrence.describe(row)
+            _add_next_rounds(row)
         return page(request, user, "plans.html", conn=conn, rows=rows, **_master(conn))
 
 
@@ -176,7 +219,13 @@ async def create(request: Request):
         _set_series_helpers(conn, row["id"], _helper_ids(form))
         series = _load(conn, row["id"])
         made = scheduler.generate_series(conn, series, scheduler.horizon(conn))
-    return _back(ok=f"สร้างแผนงาน \"{data['title']}\" แล้ว — วางกิจกรรมล่วงหน้าไว้ {made} ครั้ง")
+        first = fetchone(conn, """
+            SELECT MIN(planned_date) AS d FROM activities
+             WHERE series_id = %s AND NOT is_deleted AND status = 'planned'
+        """, (row["id"],))
+    when = f" · ครั้งแรก {thaidate.short(first['d'])}" if first and first["d"] else ""
+    return _back(ok=f"สร้างแผนงาน \"{data['title']}\" แล้ว — "
+                    f"วางกิจกรรมล่วงหน้าไว้ {made} ครั้ง{when}")
 
 
 @router.post("/{series_id}/edit")

@@ -9,6 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from routers import plans  # noqa: E402
 from services import recurrence  # noqa: E402
 
 
@@ -120,3 +121,56 @@ def test_fixed_mode_still_generates_a_full_calendar_series():
                   anchor_mode=recurrence.ANCHOR_FIXED)
     got = recurrence.occurrences(plan, date(2027, 5, 1))
     assert got == [date(2026, 10, 15), date(2027, 1, 15), date(2027, 4, 15)]
+
+
+# ── "รอบถัดไป" ที่หน้ารายการแผนงาน (ผู้ใช้ขอ 2026-10-02) ──────────
+
+def plan_row(**kw):
+    row = {"id": 1, "active": True, "freq": "weekly", "interval": 1,
+           "anchor_mode": "after_done", "starts_on": date(2026, 10, 2),
+           "ends_on": None, "max_count": None, "made_n": 1,
+           "next_on": date(2026, 10, 2), "open_on": date(2026, 10, 2),
+           "open_end": date(2026, 10, 2), "after_next_on": None}
+    row.update(kw)
+    return row
+
+
+def test_after_done_plan_projects_the_round_after_this_one():
+    """โหมดนับจากวันทำเสร็จวางล่วงหน้าได้รอบเดียว — หน้าจอจึงต้องประมาณรอบถัดไปให้ดู"""
+    row = plan_row()
+    plans._add_next_rounds(row)
+    assert row["after_next_on"] == date(2026, 10, 9)      # +1 สัปดาห์จากวันจบรอบนี้
+    assert row["after_next_guess"] is True
+
+
+def test_fixed_plan_uses_the_real_next_occurrence_not_a_guess():
+    row = plan_row(anchor_mode="fixed", after_next_on=date(2026, 11, 15))
+    plans._add_next_rounds(row)
+    assert row["after_next_on"] == date(2026, 11, 15)
+    assert row["after_next_guess"] is False
+
+
+def test_projection_stops_when_the_plan_has_an_end_date():
+    row = plan_row(ends_on=date(2026, 10, 5))
+    plans._add_next_rounds(row)
+    assert row["after_next_on"] is None
+
+
+def test_projection_stops_at_max_count():
+    row = plan_row(max_count=1, made_n=1)
+    plans._add_next_rounds(row)
+    assert row["after_next_on"] is None
+
+
+def test_closed_plan_gets_no_projection():
+    row = plan_row(active=False)
+    plans._add_next_rounds(row)
+    assert row["after_next_on"] is None
+
+
+def test_an_overdue_round_still_counts_as_the_next_one():
+    """รอบที่เลยกำหนดแล้วยังไม่ปิด ต้องขึ้นเป็น "ครั้งถัดไป" พร้อมป้ายค้าง ไม่ใช่ขึ้น '-'"""
+    row = plan_row(next_on=None, open_on=date(2020, 1, 1), open_end=date(2020, 1, 1))
+    plans._add_next_rounds(row)
+    assert row["next_on"] == date(2020, 1, 1)
+    assert row["next_late"] is True
