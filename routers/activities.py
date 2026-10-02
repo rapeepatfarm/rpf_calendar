@@ -296,6 +296,38 @@ def start_date(request: Request, activity_id: int,
                        lambda c, a, u: act.set_start_date(c, a, u, when))
 
 
+@router.post("/{activity_id}/move")
+def move(request: Request, activity_id: int, date: str = Form(""), next: str = Form("")):
+    """ลากแถบกิจกรรมบนปฏิทินไปวางวันอื่น
+
+    ใช้สิทธิ์เดียวกับการแก้ไขกิจกรรม (`can_edit_activity`) ไม่ใช่ `can_run_activity` —
+    การย้ายวันคือการแก้แผน ไม่ใช่การลงมือทำ · เช็กที่เซิร์ฟเวอร์เสมอ เพราะยิง POST ตรงได้
+    แม้แถบบนหน้าจอจะลากไม่ได้ก็ตาม
+
+    ตอบกลับพร้อมข้อมูลให้ปุ่ม "ย้ายกลับ" — การลากพลาดเกิดได้ง่ายกว่าการกดปุ่ม
+    จึงต้องมีทางกลับที่กดครั้งเดียวจบ (กติกาข้อ 7: ระบบย้ายอะไรไป ต้องย้ายกลับได้)
+    """
+    user = require_login(request)
+    back = _safe_next(next, f"/activities/{activity_id}")
+    when = as_date(date)
+    if when is None:
+        return _redirect(back, err="วันปลายทางไม่ถูกต้อง")
+
+    with get_conn() as conn:
+        activity = _load(conn, activity_id)
+        if not can_edit_activity(user, activity):
+            raise HTTPException(status_code=403, detail="ไม่มีสิทธิ์ย้ายวันของกิจกรรมนี้")
+        was = activity["planned_date"]
+        problem = act.move_to(conn, activity, user, when)
+    if problem:
+        return _redirect(back, err=problem)
+
+    joiner = "&" if "?" in back else "?"
+    return RedirectResponse(
+        f"{back}{joiner}ok={quote(f'ย้าย ' + activity['title'] + ' ไป ' + thaidate.short(when))}"
+        f"&undo={activity_id}&undo_to={was.isoformat()}", status_code=303)
+
+
 @router.post("/{activity_id}/end-date")
 def end_date(request: Request, activity_id: int,
              ended_on: str = Form(""), next: str = Form("")):

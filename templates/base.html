@@ -99,7 +99,20 @@
 
     <main class="content">
       {% if request.query_params.get('ok') %}
-        <div class="alert ok">{{ request.query_params.get('ok') }}</div>
+        {# ปุ่มย้ายกลับหลังลากวางผิด — ลากพลาดเกิดง่ายกว่ากดปุ่มผิด จึงต้องมีทางกลับ
+           ที่กดครั้งเดียวจบ แทนการถามยืนยันทุกครั้งซึ่งจะทำให้การลากช้ากว่ากดแก้ไข #}
+        <div class="alert ok">
+          <span>{{ request.query_params.get('ok') }}</span>
+          {% if request.query_params.get('undo') and request.query_params.get('undo_to') %}
+          <form method="post"
+                action="/activities/{{ request.query_params.get('undo') }}/move"
+                style="display:inline; margin-left:10px">
+            <input type="hidden" name="date" value="{{ request.query_params.get('undo_to') }}">
+            <input type="hidden" name="next" value="{{ path }}">
+            <button class="btn btn-sm" type="submit">↩ ย้ายกลับ</button>
+          </form>
+          {% endif %}
+        </div>
       {% endif %}
       {% if request.query_params.get('err') %}
         <div class="alert">{{ request.query_params.get('err') }}</div>

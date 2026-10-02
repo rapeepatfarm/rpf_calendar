@@ -26,6 +26,11 @@ function calendarPage(data) {
     duty: data.duty || {},              // {iso: {posts, free, short}} จาก staffing.roster_range
     canManage: !!data.canManage,
 
+    // ── ลากแถบไปวางวันอื่น (เดสก์ท็อป) ──
+    dragId: null,       // id ของแถบที่กำลังลาก
+    dragFrom: null,     // วันเดิมของแถบนั้น
+    dropDay: null,      // ช่องวันที่เมาส์ลอยอยู่ตอนนี้ — ใช้ไฮไลต์ปลายทาง
+
     tab: 'next',
     pickedId: data.picked || null,      // กางรายละเอียดค้างไว้ตั้งแต่โหลดหน้า (ดู pick())
     selDate: data.selected || null,     // วันที่ไฮไลต์ไว้ในตาราง
@@ -213,6 +218,36 @@ function calendarPage(data) {
       this.selDate = startIso;
       this.pick(id);
       this.syncUrl();
+    },
+
+    /** เริ่มลากแถบกิจกรรม
+     *
+     *  ต้องใส่ข้อมูลลง dataTransfer ด้วย ไม่งั้น Firefox ไม่ยอมเริ่มลากให้
+     *  (Chrome ปล่อยผ่าน แต่ Firefox ต้องมี payload อย่างน้อยหนึ่งอย่าง)
+     */
+    dragStart(id, fromIso, event) {
+      this.dragId = id;
+      this.dragFrom = fromIso;
+      if (event && event.dataTransfer) {
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', String(id));
+      }
+    },
+
+    /** วางแถบลงช่องวัน — ส่งคำสั่งย้ายทันที ไม่ถามยืนยัน
+     *
+     *  กล่องยืนยันทุกครั้งจะทำให้การลากช้ากว่าการกดเข้าไปแก้ ซึ่งผิดจุดประสงค์
+     *  ความปลอดภัยมาจากปุ่ม "ย้ายกลับ" ที่ขึ้นหลังย้ายเสร็จแทน
+     */
+    dropOn(iso) {
+      const id = this.dragId;
+      this.dropDay = null;
+      this.dragId = null;
+      if (!id || iso === this.dragFrom) return;      // วางที่เดิม = ไม่ต้องทำอะไร
+      const form = this.$refs.moveForm;
+      form.action = '/activities/' + id + '/move';
+      this.$refs.moveDate.value = iso;
+      form.submit();
     },
 
     /** กดช่องวัน — ไฮไลต์ไว้เฉยๆ ใช้เป็นวันตั้งต้นตอนกดเพิ่มงาน

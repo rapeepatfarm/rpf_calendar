@@ -618,6 +618,66 @@ def set_start_date(conn, activity: dict, user: dict, new_date: date) -> str | No
     return None
 
 
+def move_to(conn, activity: dict, user: dict, new_start: date) -> str | None:
+    """ย้ายวันของแผนทั้งก้อน — ใช้ตอนลากแถบกิจกรรมบนปฏิทินไปวางวันอื่น
+
+    เป็น "คนสั่งย้าย" ไม่ใช่ระบบขยับเอง จึงไม่ขัดกติกาข้อ 1 · ต้องเขียน log `rescheduled`
+    เหมือนการเลื่อนวันทุกทางที่มีอยู่
+
+    **คงระยะเวลาเดิมเสมอ** — งาน 3 วันลากไปวางวันไหนก็ยังเป็น 3 วัน
+    (ลากเพื่อเลื่อนแผน ไม่ใช่เพื่อยืด/หดงาน · จะยืดหดใช้ปุ่มแก้วันสิ้นสุด)
+
+    กติกาที่ต้องตรงกับ `update()` เพราะเป็นการแก้วันด้วยมือเหมือนกัน:
+      · `date_overridden` — งานที่ซิงค์มา ปักธงกันรอบซิงค์ถัดไปเอาวันต้นทางมาทับ
+      · ล้าง `shift_source_id` — คนย้ายเองแล้วถือเป็นเจ้าของวันนั้น ระบบต้องไม่ดึงกลับ
+
+    ปฏิเสธสามกรณี: งานที่ปิดไปแล้ว (แก้ประวัติ) · งานที่กำลังทำอยู่ (ให้ใช้ปุ่มแก้วันเริ่มงานจริง
+    ซึ่งแก้ `started_at` ไปพร้อมกัน) · วันปลายทางชนรอบอื่นของแผนประจำเดียวกัน
+    """
+    if activity["status"] in CLOSED_STATUSES:
+        return f"งานนี้{STATUS_LABELS[activity['status']]}ไปแล้ว ย้ายวันไม่ได้"
+    if activity["status"] != "planned":
+        return ("งานนี้กดเริ่มไปแล้ว — ถ้าจะแก้วันให้ใช้ปุ่ม \"แก้วันที่เริ่มงานจริง\" "
+                "เพราะต้องแก้เวลาที่เริ่มไปพร้อมกัน")
+
+    old_start = activity["planned_date"]
+    if new_start == old_start:
+        return None
+
+    span = (activity["planned_end_date"] - old_start).days
+    new_end = new_start + timedelta(days=span)
+
+    # วันปลายทางอาจมีรอบอื่นของแผนประจำเดียวกันจองไว้ — ถ้าดันทุรัง UPDATE จะชน
+    # UNIQUE (series_id, planned_date) แล้วพังทั้งคำสั่ง · ที่นี่ไม่มีขั้นตอนยืนยันสองชั้น
+    # แบบตอนกดเริ่มงาน จึงบอกเหตุผลแล้วไม่ทำ
+    if activity.get("series_id"):
+        clash = fetchone(conn, """
+            SELECT id FROM activities
+             WHERE series_id = %s AND planned_date = %s AND id <> %s AND NOT is_deleted
+        """, (activity["series_id"], new_start, activity["id"]))
+        if clash:
+            return (f"วันที่ {thaidate.short(new_start)} มีงานรอบอื่นของแผนประจำนี้อยู่แล้ว "
+                    "ย้ายมาทับไม่ได้")
+
+    overridden = bool(activity.get("source_system"))
+    execute(conn, """
+        UPDATE activities
+           SET planned_date = %s, planned_end_date = %s,
+               date_overridden = CASE WHEN %s THEN TRUE ELSE date_overridden END,
+               shift_source_id = NULL,
+               updated_at = NOW(), updated_by = %s
+         WHERE id = %s
+    """, (new_start, new_end, overridden, user["id"], activity["id"]))
+
+    detail = f"ลากย้ายวัน {thaidate.short(old_start)} → {thaidate.short(new_start)}"
+    if span:
+        detail += f" (งาน {span + 1} วัน ระยะเวลาเท่าเดิม)"
+    if overridden:
+        detail += " · วันที่นี้จะถูกส่งกลับไปใช้ที่โปรแกรมต้นทาง"
+    _log(conn, activity["id"], "rescheduled", user, None, None, detail)
+    return None
+
+
 def set_end_date(conn, activity: dict, user: dict, new_date: date) -> str | None:
     """แก้วันสิ้นสุดของแผน — ใช้ตอนงานยืดออกหรือจบเร็วกว่าที่วางไว้ (สิทธิ์ผู้ดูแลระบบ)
 

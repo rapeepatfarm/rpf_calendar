@@ -60,11 +60,15 @@
         {# ชั้นล่าง: ช่องวัน (รับการคลิก) #}
         <div class="cal-bg">
           {% for day in week['days'] %}
+          {# ลากแถบกิจกรรมมาวางที่ช่องวันเพื่อเลื่อนแผน (เดสก์ท็อป — มือถือใช้ปุ่มเหมือนเดิม) #}
           <div class="cal-day{{ ' other' if not day.in_month }}{{ ' today' if day.is_today }}"
-               :class="{ 'sel': selDate === '{{ day.date }}' }"
+               :class="{ 'sel': selDate === '{{ day.date }}', 'drop-on': dropDay === '{{ day.date }}' }"
                x-on:click="pickDay('{{ day.date }}')"
                role="button" tabindex="0"
-               x-on:keydown.enter="pickDay('{{ day.date }}')">
+               x-on:keydown.enter="pickDay('{{ day.date }}')"
+               x-on:dragover.prevent="dropDay = '{{ day.date }}'"
+               x-on:dragleave="if (dropDay === '{{ day.date }}') dropDay = null"
+               x-on:drop.prevent="dropOn('{{ day.date }}')">
             <span class="cal-num">{{ day.date.day }}</span>
             {% if day.more %}<span class="cal-more">+{{ day.more }}</span>{% endif %}
             {# มุมแดง = จุดงานขาดคนและยังไม่มีคนแทน (§29.4) — แถบลาบอกว่าใครลา แต่ไม่ได้บอกว่าจุดมีคนพอไหม #}
@@ -94,8 +98,12 @@
             <span class="cal-bar-title">{{ a.label }}</span>
           </button>
           {% else %}
-          <button type="button"
-                  class="cal-bar-item st-{{ a.status }}{{ ' late' if a.days_late }}{{ ' clip-l' if bar.clipped_left }}{{ ' clip-r' if bar.clipped_right }}"
+          {# ลากได้เฉพาะงานที่ยังเป็นแผนและคนนี้มีสิทธิ์แก้ — เซิร์ฟเวอร์เช็กซ้ำอีกชั้น #}
+          {% set movable = a.can_edit and a.status == 'planned' %}
+          <button type="button" {{ 'draggable=true' if movable }}
+                  x-on:dragstart="dragStart({{ a.id }}, '{{ a.planned_date }}', $event)"
+                  x-on:dragend="dragId = null; dropDay = null"
+                  class="cal-bar-item st-{{ a.status }}{{ ' movable' if movable }}{{ ' late' if a.days_late }}{{ ' clip-l' if bar.clipped_left }}{{ ' clip-r' if bar.clipped_right }}"
                   style="grid-column: {{ bar.col_start }} / span {{ bar.span }};
                          grid-row: {{ bar.lane + 1 }};
                          --bar-color: {{ a.category_color or '#8592a6' }}"
@@ -312,6 +320,13 @@
     {# ไม่มีปุ่มเพิ่มงานท้ายแผงแล้ว — ซ้ำกับปุ่ม "+ เพิ่มงาน" บนแถบบนซึ่งเห็นตลอด
        และกินพื้นที่แผงที่ผู้ใช้อยากได้ไว้แสดงรายการ #}
   </aside>
+
+{# ฟอร์มซ่อน — ลากวางแล้วส่งทันที (ไม่มีกล่องยืนยัน เพราะจะทำให้การลากช้ากว่ากดปุ่มแก้ไข
+   ความปลอดภัยมาจากปุ่ม "ย้ายกลับ" ที่ขึ้นหลังย้ายเสร็จแทน) #}
+<form method="post" x-ref="moveForm" style="display:none">
+  <input type="hidden" name="date" x-ref="moveDate">
+  <input type="hidden" name="next" :value="backUrl">
+</form>
 </div>
 {% endblock %}
 
