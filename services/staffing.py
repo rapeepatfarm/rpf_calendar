@@ -328,7 +328,9 @@ def staff_groups(rows: list[dict]) -> list[dict]:
         if not groups or groups[-1]["id"] != key:
             groups.append({"id": key, "name": s.get("department_name") or "ยังไม่ระบุฝ่าย",
                            "staff": []})
-        groups[-1]["staff"].append({"id": s["id"], "name": s["name"]})
+        groups[-1]["staff"].append({"id": s["id"], "name": s["name"],
+                                    "position": s.get("position") or "",
+                                    "department": s.get("department_name") or ""})
     return groups
 
 

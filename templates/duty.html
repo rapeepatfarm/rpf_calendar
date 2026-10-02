@@ -6,6 +6,8 @@
                      'description': '', 'sort_order': 0, 'active': True} %}
 {% set blank_assign = {'id': '', 'post_id': '', 'staff_id': '', 'starts_on': today_iso,
                        'ends_on': '', 'covers_staff_id': '', 'note': ''} %}
+{# ทางถอยเมื่อ router ยังเป็นตัวเก่า (ช่วงรอรีสตาร์ต) — ดูหมายเหตุเดียวกันใน leaves.html #}
+{% set groups = staff_groups if staff_groups else [{'id': 0, 'name': 'ทุกคน', 'staff': staff}] %}
 
 {% macro run_line(r) -%}
   <b>{{ r.post.name }}</b> ขาด {{ r.missing }} คน · {{ d_span(r.date_from, r.date_to) }}
@@ -25,7 +27,7 @@
 
 {% block content %}
 <div x-data='dutyPage({ blankPost: {{ blank_post | tojson }}, blankAssign: {{ blank_assign | tojson }},
-                       staffGroups: {{ (staff_groups or []) | tojson }},
+                       staffGroups: {{ groups | tojson }},
                        postMembers: {{ (post_members or {}) | tojson }} })'
      x-on:open-post.window="openPost(blankPost)">
 

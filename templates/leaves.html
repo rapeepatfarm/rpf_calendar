@@ -5,6 +5,9 @@
 {% set blank = {'id': '', 'staff_id': preset_staff, 'leave_type_id': '',
                 'date_from': preset_date, 'date_to': preset_date, 'part': 'full', 'note': ''} %}
 {% set filtering = flt.staff_id or flt.department_id %}
+{# ทางถอยเมื่อ router ยังเป็นตัวเก่า (ช่วงรอรีสตาร์ต) — ไม่งั้นช่องเลือกว่างเปล่าทั้งคู่
+   เทมเพลตโหลดใหม่เองทุกคำขอ แต่โค้ด router โหลดตอนสตาร์ตเท่านั้น #}
+{% set groups = staff_groups if staff_groups else [{'id': 0, 'name': 'ทุกคน', 'staff': staff}] %}
 
 {% block topbar_extra %}
 <a class="btn btn-sm" href="/master/staff">‹ พนักงาน</a>
@@ -14,8 +17,9 @@
 <div x-data='leavePage({
        editing: {{ "true" if open_add else "false" }},
        blank: {{ blank | tojson }},
-       staffGroups: {{ (staff_groups or []) | tojson }},
-       leaveRanges: {{ (leave_ranges or {}) | tojson }}
+       staffGroups: {{ groups | tojson }},
+       leaveRanges: {{ (leave_ranges or {}) | tojson }},
+       presetStaff: "{{ preset_staff or '' }}"
      })'>
 
 {% macro leave_rows(rows, empty_text) %}
@@ -61,16 +65,17 @@
     <span class="faint" style="font-size:12.5px">{{ upcoming | length }} รายการ</span>
 
     <form method="get" action="/leaves" class="head-filters">
-      <select name="staff_id" onchange="this.form.submit()" aria-label="กรองตามพนักงาน">
-        <option value="">ทุกคน</option>
-        {% for s in staff %}
-        <option value="{{ s.id }}" {{ 'selected' if flt.staff_id == s.id }}>{{ s.name }}</option>
-        {% endfor %}
-      </select>
+      {# ฝ่ายมาก่อนคน — คนใช้จริงมักนึกถึงฝ่ายก่อนแล้วค่อยเจาะหาคน (ผู้ใช้สั่ง 2026-10-02) #}
       <select name="department_id" onchange="this.form.submit()" aria-label="กรองตามฝ่าย">
         <option value="">ทุกฝ่าย</option>
         {% for d in departments %}
         <option value="{{ d.id }}" {{ 'selected' if flt.department_id == d.id }}>{{ d.name }}</option>
+        {% endfor %}
+      </select>
+      <select name="staff_id" onchange="this.form.submit()" aria-label="กรองตามพนักงาน">
+        <option value="">ทุกคน</option>
+        {% for s in staff %}
+        <option value="{{ s.id }}" {{ 'selected' if flt.staff_id == s.id }}>{{ s.name }}</option>
         {% endfor %}
       </select>
       {% if filtering %}<a class="btn btn-sm" href="/leaves">ล้าง</a>{% endif %}
@@ -178,6 +183,12 @@
               ไม่เหลือใครให้เลือก — ทุกคนมีวันลาคาบช่วงนี้อยู่แล้ว หรือถูกตัวกรองฝ่ายกรองออก
               · ถ้าจะแก้ของเดิมให้กดปุ่มแก้ไขที่รายการนั้นแทน
             </div>
+            {# ยืนยันว่ากำลังบันทึกให้ใคร — สำคัญตอนเข้ามาจากปุ่ม "กำหนดวันลา" ของแต่ละคน #}
+            <div class="chosen-staff" x-show="chosen()">
+              <b x-text="chosen() && chosen().name"></b>
+              <span x-text="chosen() && [chosen().position, chosen().department]
+                                        .filter(Boolean).join(' · ')"></span>
+            </div>
           </div>
           <div class="form-grid">
             <div class="field">
@@ -228,6 +239,7 @@ function leavePage(data) {
     f: { ...data.blank },
     editing: !!data.editing,
     leaveRanges: data.leaveRanges || {},
+    presetStaff: data.presetStaff || '',
 
     /** ซ่อนคนที่มีวันลาคาบช่วงที่กำลังกรอกอยู่แล้ว — จะได้ไม่เลือกซ้ำ
      *
@@ -239,10 +251,25 @@ function leavePage(data) {
       const from = this.f.date_from;
       if (!from) return [];
       const to = this.f.date_to || from;
+      // คนที่ผู้ใช้เจาะจงมาจากปุ่ม "กำหนดวันลา" ห้ามซ่อน — เขาตั้งใจเลือกคนนี้
+      // ถ้าช่วงวันไปทับของเดิมจริง เซิร์ฟเวอร์จะบอกเหตุผลที่ชัดกว่าการให้ชื่อหายไปเฉยๆ
+      const keep = new Set([String(this.f.id), String(this.presetStaff)]);
       return Object.entries(this.leaveRanges)
-        .filter(([, rows]) => rows.some(r => String(r.id) !== String(this.f.id)
-                                             && overlapsIso(from, to, r.from, r.to)))
+        .filter(([staffId, rows]) => !keep.has(String(staffId))
+                && rows.some(r => String(r.id) !== String(this.f.id)
+                                  && overlapsIso(from, to, r.from, r.to)))
         .map(([staffId]) => staffId);
+    },
+
+    /** ข้อมูลของคนที่เลือกอยู่ — ใช้โชว์ชื่อ/ตำแหน่ง/ฝ่ายใต้ช่องเลือก */
+    chosen() {
+      const id = String(this.f.staff_id || '');
+      if (!id) return null;
+      for (const g of this.staffGroups) {
+        const found = g.staff.find(s => String(s.id) === id);
+        if (found) return found;
+      }
+      return null;
     },
 
     /** เปิดฟอร์ม — ล้างตัวกรองฝ่ายทุกครั้ง ไม่ให้ตัวกรองเก่าค้างแล้วหาชื่อไม่เจอ */

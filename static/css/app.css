@@ -630,6 +630,14 @@ a:hover { text-decoration: underline; }
 }
 .chip-pick input:focus-visible + span { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
 /* ผู้ปฏิบัติงาน (v2) — จัดกลุ่มตามฝ่าย + ป้ายความว่าง */
+/* บรรทัดยืนยันว่ากำลังบันทึกให้ใคร (ฟอร์มวันลา) */
+.chosen-staff {
+  margin-top: 7px; padding: 7px 10px; border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  font-size: 13px; display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline;
+}
+.chosen-staff span { color: var(--text-dim); font-size: 12px; }
+
 .chip-group { margin-top: 8px; }
 .chip-group-head {
   display: flex; align-items: center; gap: 10px; margin-bottom: 6px;

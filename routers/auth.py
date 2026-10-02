@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 
-from auth import (authenticate, hash_password, password_problem, require_login,
+from auth import (authenticate, get_current_user, hash_password, password_problem, require_login,
                   verify_password)
 from database import execute, fetchall, get_conn
 from services import loginguard
@@ -13,8 +13,17 @@ router = APIRouter()
 
 @router.get("/login")
 def login_page(request: Request):
+    """คนที่ล็อกอินค้างอยู่แล้วให้เด้งเข้าโปรแกรมเลย — แต่ต้องเช็กว่าบัญชีนั้นยังอยู่จริง
+
+    ถ้าเช็กแค่ว่ามี user_id ใน session แล้วบัญชีถูกลบ/ปิดไปแล้ว จะเกิดวงวนไม่รู้จบ:
+    /login เห็นว่ามี session เลยเด้งไป /calendar · /calendar โหลดบัญชีไม่ได้เลยเด้งกลับ /login
+    ผู้ใช้จะค้างอยู่อย่างนั้นจนกว่าจะล้างคุกกี้เอง ซึ่งเขาไม่มีทางรู้ว่าต้องทำ
+    (เจอจริง 2026-10-02 ตอนสลับฐานข้อมูลทดสอบ · เกิดได้จริงเมื่อผู้ดูแลลบบัญชีคนที่ยังล็อกอินค้าง)
+    """
     if request.session.get("user_id"):
-        return RedirectResponse("/calendar", status_code=303)
+        if get_current_user(request):
+            return RedirectResponse("/calendar", status_code=303)
+        request.session.clear()      # บัญชีหายไปแล้ว — ทิ้ง session ทิ้งแล้วให้ล็อกอินใหม่
     return templates.TemplateResponse("login.html", {"request": request, "error": None})
 
 
