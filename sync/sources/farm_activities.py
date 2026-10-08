@@ -37,6 +37,8 @@ class FarmActivitySource:
     code = "farm_activities"
     name = "แผนกิจกรรมฝูงไก่จาก RPF Farm"
     system = "rpf_farm"
+    # ตรงกับ flock_activity_plans.kind ของฟาร์ม
+    category_keys = {"vaccine": "วัคซีน", "activity": "กิจกรรมอื่น (ย้ายไก่ · คัดเกรด ฯลฯ)"}
 
     def fetch(self, config: dict, since: date) -> list[ExternalActivity]:
         with get_farm_conn() as farm:
@@ -59,6 +61,9 @@ class FarmActivitySource:
                   LEFT JOIN activity_types at ON at.id = p.activity_type_id
                   LEFT JOIN flock_activity_records r ON r.plan_id = p.id
                  WHERE NOT p.is_deleted
+                   -- แผนที่ฟาร์มสร้างจากกิจกรรมของปฏิทินเอง (migration 009 ฝั่งฟาร์ม)
+                   -- ห้ามดึงกลับมา ไม่งั้นงานเดียวจะขึ้นในปฏิทินสองแถว
+                   AND p.calendar_activity_id IS NULL
                    -- คาบเกี่ยวช่วง ไม่ใช่ planned_date >= since เฉยๆ
                    -- งานหลายวันที่เริ่มก่อน since แต่ยังทำอยู่ ต้องคืนมาด้วย
                    -- ไม่งั้น runner จะไม่เห็นแล้วปิดเป็น cancelled ทั้งที่ยังทำค้างอยู่
@@ -70,11 +75,12 @@ class FarmActivitySource:
 
     @staticmethod
     def _to_activity(r: dict) -> ExternalActivity:
-        where = r["houses"] or f"ฝูง {r['flock_code']}"
         # วัคซีนเติมคำนำหน้าให้ชัดว่าเป็นการทำวัคซีน ส่วนกิจกรรมอื่นชื่อมันบอกตัวเองอยู่แล้ว
-        # ("ย้ายไก่ — A8" อ่านรู้เรื่องกว่า "ทำย้ายไก่ — A8")
+        # ("ย้ายไก่ — …" อ่านรู้เรื่องกว่า "ทำย้ายไก่ — …")
         label = f"ทำวัคซีน {r['item_name']}" if r["kind"] == "vaccine" else r["item_name"]
-        title = f"{label} — {where}"
+        # ต่อท้ายด้วยรหัสฝูง ไม่ใช่โรงเรือน (ผู้ใช้สั่ง 2026-10-02) — แผนผูกกับไก่ชุดนี้
+        # ส่วนโรงเรือนเปลี่ยนทุกครั้งที่ย้ายไก่ · โรงเรือนยังอยู่ในรายละเอียดด้านล่าง
+        title = f"{label} — {r['flock_code']}"
 
         detail = [f"ฝูง {r['flock_code']} · {_age_text(r)}"]
         if r["houses"]:
@@ -95,6 +101,7 @@ class FarmActivitySource:
             description="\n".join(detail),
             source_status="done" if r["actual_date"] else "pending",
             done_on=r["actual_date"],
+            category_key=r["kind"],
             payload={"flock_code": r["flock_code"], "age_day": r["age_day"],
                      "kind": r["kind"], "duration_days": r["duration_days"]},
         )

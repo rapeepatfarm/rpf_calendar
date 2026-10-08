@@ -49,13 +49,17 @@ def _insert_occurrence(conn, series: dict, start: date, helper_ids: list[int]) -
              planned_date, planned_end_date, is_all_day, planned_start_time,
              planned_end_time, duration_min, carry_over, needs_start,
              auto_skip_after_days,
+             farm_flock_id, farm_flock_code, farm_kind, farm_item_id, farm_item_name,
              source, created_by, updated_by)
         VALUES (%(series_id)s, %(title)s, %(category_id)s, %(description)s,
                 %(assignee_id)s, %(priority)s, %(start)s, %(end)s, %(is_all_day)s,
                 %(start_time)s, NULL, %(duration_min)s, %(carry_over)s,
                 COALESCE((SELECT needs_start FROM activity_categories
                            WHERE id = %(category_id)s), TRUE),
-                %(auto_skip)s, 'series', %(created_by)s, %(created_by)s)
+                %(auto_skip)s,
+                %(farm_flock_id)s, %(farm_flock_code)s, %(farm_kind)s,
+                %(farm_item_id)s, %(farm_item_name)s,
+                'series', %(created_by)s, %(created_by)s)
         -- ต้องเขียน WHERE ซ้ำให้ตรงกับ index เพราะ activities_series_date_uq
         -- เป็น partial unique index — ถ้าไม่ใส่ PostgreSQL จะหา arbiter ไม่เจอ
         ON CONFLICT (series_id, planned_date) WHERE series_id IS NOT NULL DO NOTHING
@@ -69,6 +73,9 @@ def _insert_occurrence(conn, series: dict, start: date, helper_ids: list[int]) -
         "carry_over": series["carry_over"],
         "auto_skip": series["auto_skip_after_days"],
         "created_by": series["created_by"],
+        # ฝูงไก่ที่ผูกไว้กับแผน (migration 016) — ทุกรอบส่งไป RPF Farm ในนามฝูงเดียวกัน
+        **{k: series.get(k) for k in ("farm_flock_id", "farm_flock_code", "farm_kind",
+                                      "farm_item_id", "farm_item_name")},
     })
     if row is None:
         return False
@@ -78,6 +85,66 @@ def _insert_occurrence(conn, series: dict, start: date, helper_ids: list[int]) -
             ON CONFLICT DO NOTHING
         """, (row["id"], staff_id))
     return True
+
+
+def _resync_open(conn, series: dict, row: dict, anchor: date | None) -> date | None:
+    """รอบถัดไปที่ค้างอยู่ — คำนวณวันใหม่เมื่อ anchor ของรอบก่อนหน้าเปลี่ยน
+
+    เดิมฟังก์ชันแม่เห็นว่ามีรอบค้างอยู่แล้วก็คืน None ทันที ผลคือวันของรอบถัดไปถูกล็อก
+    ไว้ตั้งแต่ "การกดปิดครั้งแรก" ตลอดไป · คนเปิดงานรอบก่อนขึ้นมาแก้วันแล้วปิดใหม่กี่ครั้ง
+    วันของรอบถัดไปก็ไม่ขยับเลย (เจอจริง 2026-10-06: B3/B4 ถูกเปิด-แก้-ปิดใหม่ 8 รอบ
+    วันของรอบถัดไปยังเป็นของการกดครั้งแรก)
+
+    **ไม่แตะสามกรณี** — คืน None เฉยๆ:
+      · ไม่รู้ anchor — ถูกเรียกจากงานรายวัน/generate_series ไม่ใช่จากการปิดงาน
+      · รอบนั้นกดเริ่มไปแล้ว — ขยับวันงานที่ลงมือแล้วคือการแก้ประวัติ
+      · คนเลื่อนวันรอบนั้นด้วยมือไปแล้ว — เขาเป็นเจ้าของวันนั้น ระบบต้องไม่ดึงกลับ
+        (กติกาเดียวกับ shift_source_id ใน activities.move_to)
+    """
+    if anchor is None or row["status"] != "planned":
+        return None
+
+    # คนแก้วันเองแล้วหรือยัง — ดูจาก log เพราะไม่มีคอลัมน์ธงสำหรับการเลื่อนด้วยมือ
+    # (date_overridden มีไว้กันรอบซิงค์จากต้นทาง เป็นคนละเรื่อง)
+    if fetchone(conn, """
+        SELECT 1 FROM activity_log
+         WHERE activity_id = %s AND action = 'rescheduled' AND by_user_id IS NOT NULL
+         LIMIT 1
+    """, (row["id"],)):
+        return None
+
+    made = fetchone(conn, """
+        SELECT COUNT(*) AS n FROM activities WHERE series_id = %s AND NOT is_deleted
+    """, (series["id"],))["n"]
+    # แถวนี้ถูกนับไปแล้ว จึงลบออกหนึ่ง ไม่งั้น max_count จะหมดเร็วไปหนึ่งรอบ
+    nxt = recurrence.next_after(series, anchor, made_count=max(0, made - 1))
+    if nxt is None or nxt == row["planned_date"]:
+        return None
+
+    clash = fetchone(conn, """
+        SELECT id FROM activities
+         WHERE series_id = %s AND planned_date = %s AND id <> %s AND NOT is_deleted
+    """, (series["id"], nxt, row["id"]))
+    if clash:
+        log.warning("แผน %s: เลื่อนรอบ %s ไป %s ไม่ได้ มีรอบอื่นจองวันนั้นอยู่",
+                    series["id"], row["id"], nxt)
+        return None
+
+    span = (row["planned_end_date"] - row["planned_date"]).days
+    execute(conn, """
+        UPDATE activities SET planned_date = %s, planned_end_date = %s, updated_at = NOW()
+         WHERE id = %s
+    """, (nxt, nxt + timedelta(days=span), row["id"]))
+    # เขียน log เองไม่เรียก activities._log เพราะไฟล์นั้น import ไฟล์นี้อยู่
+    execute(conn, """
+        INSERT INTO activity_log (activity_id, action, detail, by_user_id)
+        VALUES (%s, 'rescheduled', %s, NULL)
+    """, (row["id"],
+          f"เลื่อนตามรอบก่อนหน้า {thaidate.short(row['planned_date'])} → "
+          f"{thaidate.short(nxt)} (นับจากวันจบงานรอบก่อน {thaidate.short(anchor)})"))
+    log.info("แผน %s: เลื่อนรอบถัดไป %s → %s (นับจาก %s)",
+             series["id"], row["planned_date"], nxt, anchor)
+    return nxt
 
 
 def ensure_next_occurrence(conn, series: dict, anchor: date | None = None) -> date | None:
@@ -92,14 +159,15 @@ def ensure_next_occurrence(conn, series: dict, anchor: date | None = None) -> da
     if not series["active"]:
         return None
 
-    # ยังมีรอบที่ยังไม่ปิดค้างอยู่ ไม่ต้องสร้างเพิ่ม
+    # ยังมีรอบที่ยังไม่ปิดค้างอยู่ ไม่ต้องสร้างเพิ่ม — แต่วันของมันอาจต้องคำนวณใหม่
     open_row = fetchone(conn, """
-        SELECT id FROM activities
+        SELECT id, status, planned_date, planned_end_date FROM activities
          WHERE series_id = %s AND NOT is_deleted
-           AND status IN ('planned', 'in_progress') LIMIT 1
+           AND status IN ('planned', 'in_progress')
+         ORDER BY planned_date LIMIT 1
     """, (series["id"],))
     if open_row:
-        return None
+        return _resync_open(conn, series, open_row, anchor)
 
     stats = fetchone(conn, """
         SELECT COUNT(*) AS made,

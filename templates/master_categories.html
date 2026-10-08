@@ -4,7 +4,7 @@
 
 {% set blank = {'id': '', 'name': '', 'color': '#2f7de1', 'icon': '',
                 'default_priority': 3, 'default_duration_min': '',
-                'sort_order': 0, 'active': True, 'needs_start': True} %}
+                'sort_order': 0, 'active': True, 'needs_start': True, 'farm_sync': False} %}
 
 {% block content %}
 <div x-data='{ editing: false, f: {{ blank | tojson }} }'>
@@ -26,6 +26,7 @@
             <th>ความสำคัญตั้งต้น</th>
             <th>ระยะเวลาตั้งต้น</th>
             <th>ต้องกดเริ่ม</th>
+            <th>ส่งไป RPF Farm</th>
             <th class="num">ใช้อยู่</th>
             <th>สถานะ</th>
             <th></th>
@@ -42,6 +43,8 @@
             <td>{{ dur(r.default_duration_min) or '-' }}</td>
             <td>{% if r.needs_start %}ต้องกด
                 {% else %}<span class="faint">แจ้งให้ทราบ</span>{% endif %}</td>
+            <td>{% if r.farm_sync %}<span class="badge st-done">ส่ง · ต้องเลือกฝูง</span>
+                {% else %}<span class="faint">-</span>{% endif %}</td>
             <td class="num">{{ r.used_n }}</td>
             <td>
               {% if r.active %}<span class="badge st-done">ใช้งาน</span>
@@ -53,7 +56,8 @@
                 'default_priority': r.default_priority,
                 'default_duration_min': r.default_duration_min or '',
                 'sort_order': r.sort_order, 'active': r.active,
-                'needs_start': r.needs_start } | tojson }}; editing = true'>แก้ไข</button>
+                'needs_start': r.needs_start,
+                'farm_sync': r.farm_sync or False } | tojson }}; editing = true'>แก้ไข</button>
               <form method="post" action="/master/categories/{{ r.id }}/delete"
                     style="display:inline"
                     onsubmit="return confirm('ลบประเภท {{ r.name }}?')">
@@ -62,7 +66,7 @@
             </td>
           </tr>
         {% else %}
-          <tr><td colspan="7"><div class="empty">ยังไม่มีประเภทกิจกรรม</div></td></tr>
+          <tr><td colspan="8"><div class="empty">ยังไม่มีประเภทกิจกรรม</div></td></tr>
         {% endfor %}
         </tbody>
       </table>
@@ -121,6 +125,17 @@
               <div class="hint" style="margin-top:3px">
                 เอาออกถ้าเป็นแค่รายการแจ้งให้ทราบ เช่นพนักงานลาหยุด ·
                 เป็นแค่ <b>ค่าตั้งต้น</b> ตอนกรอกงานใหม่ คนกรอกเปลี่ยนรายตัวได้เสมอ
+              </div>
+            </span>
+          </label>
+          <label class="check" style="margin-top:12px">
+            <input type="checkbox" name="farm_sync" value="1" x-model="f.farm_sync">
+            <span>
+              ส่งไป RPF Farm (เป็นกิจกรรมของฝูงไก่)
+              <div class="hint" style="margin-top:3px">
+                ติ๊กแล้ว ฟอร์มกิจกรรมของประเภทนี้จะ<b>บังคับเลือกฝูงไก่ และวัคซีน/กิจกรรม</b>
+                จากทะเบียนของฟาร์ม · ฟาร์มจะดึงไปสร้างเป็นแผนของฝูงนั้น และลงบันทึกผลเมื่องานเสร็จ ·
+                เอาติ๊กออกทีหลัง งานที่ส่งไปแล้วยังผูกกับฝูงเดิม
               </div>
             </span>
           </label>

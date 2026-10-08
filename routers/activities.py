@@ -6,7 +6,7 @@ router นี้ทำหน้าที่แค่ตรวจสิทธิ�
 from urllib.parse import quote
 
 from fastapi import APIRouter, Form, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 
 from auth import (can_create, can_edit_activity, can_manage, can_run_activity,
                   require_admin,
@@ -14,6 +14,7 @@ from auth import (can_create, can_edit_activity, can_manage, can_run_activity,
 from database import fetchall, get_conn
 from forms import as_bool, as_date, as_int, as_priority, as_text, as_time
 from services import activities as act
+from services import farm_link
 from services import staffing
 from services import thaidate
 from view import page
@@ -52,7 +53,7 @@ def _load(conn, activity_id: int) -> dict:
 
 def _master(conn) -> dict:
     cats = fetchall(conn, "SELECT id, name, color, default_priority, "
-                          "default_duration_min, needs_start FROM activity_categories "
+                          "default_duration_min, needs_start, farm_sync FROM activity_categories "
                           "WHERE active ORDER BY sort_order, name")
     # v2 เฟส D: ทะเบียนมาพร้อมฝ่าย ให้ฟอร์มจัดกลุ่มและ "เลือกทั้งฝ่าย" ได้
     # + ข้อมูลความว่าง (ลา/ประจำจุด/งานอื่น) ให้ฟอร์มติดป้ายต่อคนตามวันที่กรอก
@@ -85,6 +86,8 @@ def _master(conn) -> dict:
         # ค่าตั้งต้นของช่อง "ต้องกดเริ่มงานไหม" แยกตามประเภท ส่งไปให้ฟอร์มทั้งชุด
         # กุญแจเป็น string เพราะ <select> คืนค่าเป็น string เสมอ
         "cat_needs_start": {str(c["id"]): c["needs_start"] for c in cats},
+        # ประเภทที่ต้องเลือกฝูงไก่ (ส่งไป RPF Farm) — ฟอร์มเปิดส่วนเลือกฝูงตามรายการนี้
+        "farm_sync_cats": [str(c["id"]) for c in cats if c["farm_sync"]],
     }
 
 
@@ -133,6 +136,21 @@ def _workers_problem(conn, data: dict, helper_ids: list[int]) -> str | None:
 
 # ── สร้าง / แก้ไข ────────────────────────────────────────────
 
+@router.get("/farm-options")
+def farm_options(request: Request):
+    """ตัวเลือกฝูงไก่ + ทะเบียนวัคซีน/กิจกรรมจาก RPF Farm ให้ปุ่ม "ดึงฝูงไก่ปัจจุบัน"
+
+    ต้องประกาศก่อน /{activity_id} ไม่งั้น route นั้นจะจับ path นี้ไปแล้วตอบ 422
+    """
+    user = require_login(request)
+    if not can_create(user):
+        raise HTTPException(status_code=403, detail="บัญชีนี้สร้างกิจกรรมไม่ได้")
+    try:
+        return JSONResponse(farm_link.options())
+    except farm_link.FarmUnavailable:
+        return JSONResponse({"error": "ติดต่อฐานข้อมูล RPF Farm ไม่ได้"}, status_code=503)
+
+
 @router.get("/new")
 def new_form(request: Request, date: str = ""):
     user = require_login(request)
@@ -161,7 +179,8 @@ async def create(request: Request):
 
     with get_conn() as conn:
         helpers = _helper_ids(form) if can_manage(user) else []
-        problem = _workers_problem(conn, data, helpers)
+        problem = (farm_link.fill(conn, form, data)
+                   or _workers_problem(conn, data, helpers))
         if problem:
             return _redirect("/activities/new", err=problem)
         activity_id = act.create(conn, data, user)
@@ -197,16 +216,29 @@ async def edit(request: Request, activity_id: int):
         if not can_manage(user):
             data["assignee_id"] = activity["assignee_id"]
 
+        problem = farm_link.fill(conn, form, data, activity)
+        if problem:
+            return _redirect(f"/activities/{activity_id}/edit", err=problem)
+
         helpers = _helper_ids(form) if can_manage(user) else None
         if helpers is not None:
             problem = _workers_problem(conn, data, helpers)
             if problem:
                 return _redirect(f"/activities/{activity_id}/edit", err=problem)
 
+        was, was_end = activity["planned_date"], activity["planned_end_date"]
         act.update(conn, activity, data, user)
         if helpers is not None:
             act.set_helpers(conn, activity_id, helpers)
-    return _redirect(f"/activities/{activity_id}", ok="บันทึกการแก้ไขแล้ว")
+
+        # แก้วันในฟอร์มก็คือการเลื่อนแผนเหมือนลากวาง จึงต้องชวนเลื่อนรอบถัดไปเหมือนกัน
+        # ส่งวันสิ้นสุดใหม่ไปเทียบ — ลากทั้งก้อนหรือยืดวันสิ้นสุดอย่างเดียวก็เข้าทางนี้ทั้งคู่
+        new_start = data["planned_date"]
+        rest = _ask_series(conn, activity,
+                           data.get("planned_end_date") or new_start, after=new_start)
+
+    target = f"/activities/{activity_id}" + ("?" + rest.lstrip("&") if rest else "")
+    return _redirect(target, ok="บันทึกการแก้ไขแล้ว")
 
 
 # ── รายละเอียด ───────────────────────────────────────────────
@@ -323,13 +355,59 @@ def move(request: Request, activity_id: int, date: str = Form(""), next: str = F
             raise HTTPException(status_code=403, detail="ไม่มีสิทธิ์ย้ายวันของกิจกรรมนี้")
         was = activity["planned_date"]
         problem = act.move_to(conn, activity, user, when)
+        rest = "" if problem else _ask_series(
+            conn, activity, act.get(conn, activity_id)["planned_end_date"], after=when)
     if problem:
         return _redirect(back, err=problem)
 
     joiner = "&" if "?" in back else "?"
     return RedirectResponse(
         f"{back}{joiner}ok={quote(f'ย้าย ' + activity['title'] + ' ไป ' + thaidate.short(when))}"
-        f"&undo={activity_id}&undo_to={was.isoformat()}", status_code=303)
+        f"&undo={activity_id}&undo_to={was.isoformat()}{rest}", status_code=303)
+
+
+@router.post("/{activity_id}/keep-plan")
+def keep_plan(request: Request, activity_id: int, next: str = Form("")):
+    """ดึงรอบถัดไปของแผน after_done กลับมาที่คาบตามแผนเดิม
+
+    คู่กับปุ่ม shift-rest แต่กลับทาง — โหมด `after_done` รอบถัดไปเลื่อนตามวันจบจริง
+    ไปแล้วอัตโนมัติ ปุ่มนี้คือการตอบว่า "ไม่เลื่อน คงแผนเดิม"
+    สิทธิ์เดียวกับการย้ายวัน (`can_edit_activity`) — เป็นการแก้แผน ไม่ใช่การลงมือทำ
+    """
+    user = require_login(request)
+    back = _safe_next(next, f"/activities/{activity_id}")
+    with get_conn() as conn:
+        activity = _load(conn, activity_id)
+        if not can_edit_activity(user, activity):
+            raise HTTPException(status_code=403, detail="ไม่มีสิทธิ์เลื่อนวันของแผนนี้")
+        problem = act.keep_rest_on_plan(conn, activity, user)
+    if problem:
+        return _redirect(back, err=problem)
+    return _redirect(back, ok="คงรอบถัดไปไว้ตามแผนเดิมแล้ว")
+
+
+@router.post("/{activity_id}/shift-rest")
+def shift_rest(request: Request, activity_id: int,
+               days: str = Form(""), next: str = Form("")):
+    """เลื่อนรอบถัดไปของแผนประจำตามรอบที่เพิ่งเลื่อนไป
+
+    สิทธิ์เดียวกับการย้ายวัน (`can_edit_activity`) — เป็นการแก้แผน ไม่ใช่การลงมือทำ
+    """
+    user = require_login(request)
+    back = _safe_next(next, f"/activities/{activity_id}")
+    shift = as_int(days)
+    if not shift:
+        return _redirect(back, err="จำนวนวันที่จะเลื่อนไม่ถูกต้อง")
+
+    with get_conn() as conn:
+        activity = _load(conn, activity_id)
+        if not can_edit_activity(user, activity):
+            raise HTTPException(status_code=403, detail="ไม่มีสิทธิ์เลื่อนวันของแผนนี้")
+        rounds = len(act.later_rounds(conn, activity))
+        problem = act.shift_rest(conn, activity, user, shift)
+    if problem:
+        return _redirect(back, err=problem)
+    return _redirect(back, ok=f"เลื่อนรอบถัดไปของแผนประจำตามด้วย {rounds} รอบ")
 
 
 @router.post("/{activity_id}/end-date")
@@ -348,14 +426,66 @@ def end_date(request: Request, activity_id: int,
     with get_conn() as conn:
         activity = _load(conn, activity_id)
         problem = act.set_end_date(conn, activity, user, when)
-    return _redirect(back, err=problem) if problem else _redirect(back, ok="แก้วันสิ้นสุดแล้ว")
+        # แก้วันสิ้นสุดคือการเลื่อนแผนอย่างหนึ่ง จึงต้องชวนเลื่อนรอบถัดไปเหมือนการลากวาง
+        rest = "" if problem else _ask_series(conn, activity, when)
+    if problem:
+        return _redirect(back, err=problem)
+
+    joiner = "&" if "?" in back else "?"
+    return RedirectResponse(
+        f"{back}{joiner}ok={quote('แก้วันสิ้นสุดแล้ว')}{rest}", status_code=303)
 
 
 @router.post("/{activity_id}/finish")
 def finish(request: Request, activity_id: int,
            next: str = Form(""), result_note: str = Form("")):
-    return _run_action(request, activity_id, next,
-                       lambda c, a, u: act.finish(c, a, u, as_text(result_note)))
+    """กดสิ้นสุดงาน
+
+    จบไม่ตรงแผนและเป็นรอบหนึ่งของแผนประจำ → ถามเรื่องรอบถัดไปในแถบแจ้งผล
+    (ผู้ใช้กำหนด 2026-10-07) · ดู `act.series_shift_choice()` ว่าเสนออะไรในโหมดไหน
+    """
+    user = require_login(request)
+    back = _safe_next(next, f"/activities/{activity_id}")
+    with get_conn() as conn:
+        activity = _load(conn, activity_id)
+        if not can_run_activity(user, activity):
+            raise HTTPException(
+                status_code=403,
+                detail="กดได้เฉพาะงานที่คุณรับผิดชอบ — ถ้าต้องกดแทนคนอื่น ให้แจ้งหัวหน้างาน")
+        problem = act.finish(conn, activity, user, as_text(result_note))
+        # อ่านวันสิ้นสุดจริงจากแถวที่เพิ่งเขียน ไม่ใช่ thaidate.today() —
+        # _shift_end_to_finish หนีบไม่ให้มาก่อนวันเริ่ม ค่าสองอย่างจึงต่างกันได้
+        ask = "" if problem else _ask_series(
+            conn, activity, act.get(conn, activity_id)["planned_end_date"])
+    if problem:
+        return _redirect(back, err=problem)
+    if not ask:
+        return _redirect(back)
+
+    joiner = "&" if "?" in back else "?"
+    return RedirectResponse(
+        f"{back}{joiner}ok={quote('บันทึกว่าทำเสร็จแล้ว')}{ask}", status_code=303)
+
+
+def _ask_series(conn, activity: dict, real_end, after=None) -> str:
+    """query string ของกล่องถามเรื่องรอบถัดไป เมื่องานจบไม่ตรงแผน
+
+    `activity` ต้องเป็นแถว **ก่อน** การเปลี่ยน เพราะ `act.plan_end()` ใช้
+    `planned_end_date_original` ถ้ามี ไม่งั้นค่อยถอยไปใช้ `planned_end_date` ·
+    ส่งแถวหลังเปลี่ยนมาแทน จะได้เกณฑ์เป็นวันใหม่เอง แล้วไม่มีอะไรไม่ตรงแผนเลยตลอดกาล
+
+    `real_end` = วันสิ้นสุดจริงหลังการกด/การแก้
+
+    ถามด้วยปุ่มในแถบแจ้งผลเหมือนปุ่ม "ย้ายกลับ" ไม่ใช่หน้ายืนยันคั่นกลาง —
+    การกดสิ้นสุดเป็นงานประจำวัน ถ้าบังคับตอบก่อนทุกครั้งจะขัดจังหวะหน้างาน
+    """
+    choice = act.series_shift_choice(conn, activity, real_end, after=after)
+    if choice is None:
+        return ""
+    if choice["mode"] == "shift":
+        return f"&shift_rest={activity['id']}&shift_days={choice['days']}"
+    return (f"&keep_plan={activity['id']}&late_days={choice['days']}"
+            f"&keep_to={quote(thaidate.short(choice['to']))}")
 
 
 @router.post("/{activity_id}/note")

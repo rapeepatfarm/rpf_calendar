@@ -10,7 +10,7 @@ from fastapi.responses import RedirectResponse
 from auth import can_manage, require_role
 from database import execute, fetchall, fetchone, get_conn
 from forms import as_bool, as_date, as_int, as_priority, as_text, as_time
-from services import recurrence, scheduler, thaidate
+from services import farm_link, recurrence, scheduler, thaidate
 from view import page
 
 router = APIRouter(prefix="/plans")
@@ -37,6 +37,9 @@ def _master(conn) -> dict:
         "leads": [x for x in staff if x["can_assign"]] or staff,
         "categories": fetchall(conn, "SELECT id, name, color FROM activity_categories "
                                      "WHERE active ORDER BY sort_order, name"),
+        # ประเภทที่ต้องเลือกฝูงไก่ (ส่งไป RPF Farm) — ฟอร์มเปิดส่วนเลือกฝูงตามรายการนี้
+        "farm_sync_cats": [str(r["id"]) for r in fetchall(
+            conn, "SELECT id FROM activity_categories WHERE active AND farm_sync")],
     }
 
 
@@ -199,7 +202,10 @@ _FIELDS = ("title", "category_id", "description", "assignee_id", "priority",
            "is_all_day", "start_time", "duration_min", "duration_days",
            "anchor_mode", "freq", "interval", "byweekday", "bymonthday", "nth_week", "nth_weekday",
            "bymonth", "byday", "starts_on", "ends_on", "max_count",
-           "carry_over", "auto_skip_after_days", "active")
+           "carry_over", "auto_skip_after_days", "active",
+           # ฝูงไก่ใน RPF Farm (migration 016) — ทุกรอบที่สร้างออกมาได้ค่าชุดนี้ไปด้วย
+           # (scheduler._insert_occurrence) เช่น Spray ND/IB ของไก่ไข่รายเล้า
+           *farm_link.EMPTY)
 
 
 @router.post("/new")
@@ -214,6 +220,9 @@ async def create(request: Request):
     columns = ", ".join(_FIELDS)
     placeholders = ", ".join(f"%({name})s" for name in _FIELDS)
     with get_conn() as conn:
+        problem = farm_link.fill(conn, form, data)
+        if problem:
+            return _back(err=problem)
         row = fetchone(conn, f"""
             INSERT INTO activity_series ({columns}, created_by, updated_by)
             VALUES ({placeholders}, %(user_id)s, %(user_id)s) RETURNING id
@@ -247,6 +256,9 @@ async def edit(request: Request, series_id: int):
     assignments = ", ".join(f"{name} = %({name})s" for name in _FIELDS)
     with get_conn() as conn:
         _load(conn, series_id)
+        problem = farm_link.fill(conn, form, data)
+        if problem:
+            return _back(err=problem)
         execute(conn, f"""
             UPDATE activity_series SET {assignments},
                    generated_until = NULL, updated_at = NOW(), updated_by = %(user_id)s

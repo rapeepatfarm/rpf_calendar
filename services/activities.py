@@ -265,6 +265,22 @@ def _advance_series(conn, activity: dict, anchor: date):
         scheduler.ensure_next_occurrence(conn, series, anchor=anchor)
 
 
+def done_anchor(activity: dict) -> date:
+    """วันที่ถือว่างานนี้จบ — จุดตั้งต้นนับรอบถัดไปของแผนประจำ
+
+    **= `planned_end_date` เสมอ** ทุกแบบของการปิดงาน (เสร็จ / ยกเลิก / ไม่ได้ทำ)
+    ไม่มีเงื่อนไขซ่อน เพราะวันสิ้นสุดของงานที่ปิดแล้วถูกทำให้ตรงกับความจริงไปแล้ว:
+    `finish()` เลื่อนมันมาวันที่กด (`_shift_end_to_finish`) · แก้ย้อนหลังด้วย
+    `set_end_date()` · ยกเลิก/ไม่ได้ทำไม่ได้ลงมือ จึงคงวันในแผนไว้
+
+    เดิมฟังก์ชันนี้เป็น `min(วันที่กด, planned_end_date)` เพื่อเดาว่า "กดย้อนหลัง
+    แปลว่างานจบตามแผน" · ผู้ใช้ตัดสินใจ 2026-10-07 ให้เลิกเดา — กดเมื่อไรคือจบเมื่อนั้น
+    ถ้าไม่ใช่ก็แก้วันสิ้นสุดย้อนหลัง · วันที่เห็นบนหน้าจอจึงเป็นวันที่ระบบใช้คิดจริง
+    ไม่มีกติกาที่มองไม่เห็น
+    """
+    return activity.get("planned_end_date") or activity["planned_date"]
+
+
 def _end_time(data: dict) -> None:
     """เติมเวลาสิ้นสุดจากเวลาเริ่ม + ระยะเวลา ถ้าผู้ใช้กรอกมาอย่างใดอย่างหนึ่ง
 
@@ -301,24 +317,41 @@ def _span_text(data: dict) -> str:
     return f"วางแผนไว้ {thaidate.short(start)} – {thaidate.short(end)} ({days} วัน)"
 
 
+# การผูกกับฝูงไก่ใน RPF Farm (migration 016) — ผู้เรียกที่ไม่รู้เรื่องนี้ได้ค่าว่างทั้งชุด
+_FARM_FIELDS = {"farm_flock_id": None, "farm_flock_code": None, "farm_kind": None,
+                "farm_item_id": None, "farm_item_name": None}
+
+
+def _farm_text(data: dict) -> str:
+    return f"ฝูง {data['farm_flock_code']} · {data['farm_item_name']}"
+
+
 def create(conn, data: dict, user: dict) -> int:
     _normalise_dates(data)
     _end_time(data)
+    data = {**_FARM_FIELDS, **data}
     row = fetchone(conn, """
         INSERT INTO activities
             (title, category_id, description, assignee_id, priority,
              planned_date, planned_end_date, is_all_day, planned_start_time,
              planned_end_time, duration_min,
              carry_over, needs_start, auto_skip_after_days, source,
+             farm_flock_id, farm_flock_code, farm_kind, farm_item_id, farm_item_name,
              created_by, updated_by)
         VALUES (%(title)s, %(category_id)s, %(description)s, %(assignee_id)s, %(priority)s,
                 %(planned_date)s, %(planned_end_date)s, %(is_all_day)s,
                 %(planned_start_time)s, %(planned_end_time)s, %(duration_min)s,
                 %(carry_over)s, %(needs_start)s, %(auto_skip_after_days)s,
-                'manual', %(user_id)s, %(user_id)s)
+                'manual',
+                %(farm_flock_id)s, %(farm_flock_code)s, %(farm_kind)s,
+                %(farm_item_id)s, %(farm_item_name)s,
+                %(user_id)s, %(user_id)s)
         RETURNING id
     """, {**data, "user_id": user["id"]})
-    _log(conn, row["id"], "created", user, to_status="planned", detail=_span_text(data))
+    detail = _span_text(data)
+    if data["farm_flock_id"]:
+        detail += f" · ส่งไป RPF Farm: {_farm_text(data)}"
+    _log(conn, row["id"], "created", user, to_status="planned", detail=detail)
     return row["id"]
 
 
@@ -326,7 +359,15 @@ def update(conn, activity: dict, data: dict, user: dict):
     """แก้ไขข้อมูลแผน — บันทึกลง log ว่าอะไรเปลี่ยนไปบ้าง"""
     _normalise_dates(data)
     _end_time(data)
+    # ผู้เรียกที่ไม่ได้ส่งฟิลด์ฟาร์มมา = คงการผูกเดิมไว้ ไม่ใช่ล้างทิ้ง
+    data = {**{k: activity.get(k) for k in _FARM_FIELDS}, **data}
     changes = []
+    if (data["farm_flock_id"], data["farm_item_id"], data["farm_kind"]) != (
+            activity.get("farm_flock_id"), activity.get("farm_item_id"), activity.get("farm_kind")):
+        if not data["farm_flock_id"]:
+            changes.append("เลิกส่งไป RPF Farm")
+        else:
+            changes.append(f"RPF Farm: {_farm_text(data)}")
     if data["title"] != activity["title"]:
         changes.append(f"ชื่องาน: {activity['title']} → {data['title']}")
     if data["planned_date"] != activity["planned_date"]:
@@ -343,7 +384,8 @@ def update(conn, activity: dict, data: dict, user: dict):
 
     # งานที่ซิงค์มาจากโปรแกรมอื่น ถ้าคนที่นี่แก้วันเอง ให้ปักธงไว้
     # รอบซิงค์ถัดไปจะได้ไม่เอาวันจากต้นทางมาทับ (ดู sync/runner._update_plan_only)
-    # และฝั่งต้นทางจะมาดึงวันนี้กลับไปใช้เอง
+    # วันที่นี้ใช้ในปฏิทินเท่านั้น — ต้นทางไม่รับไปทับแผน (ผู้ใช้ตัดสินใจ 2026-10-03)
+    # ต้นทางได้แค่ "ผลที่ทำจริง" ตอนงานเสร็จ ซึ่งวันเริ่ม/วันสิ้นสุดตรงนี้คือข้อมูลนั้น
     date_changed = (data["planned_date"] != activity["planned_date"]
                     or data["planned_end_date"] != activity["planned_end_date"])
     overridden = bool(activity.get("source_system")) and (
@@ -363,6 +405,9 @@ def update(conn, activity: dict, data: dict, user: dict):
             duration_min = %(duration_min)s, carry_over = %(carry_over)s,
             needs_start = %(needs_start)s,
             auto_skip_after_days = %(auto_skip_after_days)s,
+            farm_flock_id = %(farm_flock_id)s, farm_flock_code = %(farm_flock_code)s,
+            farm_kind = %(farm_kind)s, farm_item_id = %(farm_item_id)s,
+            farm_item_name = %(farm_item_name)s,
             updated_at = NOW(), updated_by = %(user_id)s
          WHERE id = %(id)s
     """, {**data, "id": activity["id"], "user_id": user["id"],
@@ -370,7 +415,7 @@ def update(conn, activity: dict, data: dict, user: dict):
 
     # การเลื่อนวันโดยตั้งใจต้องแยกออกจากการแก้ข้อมูลทั่วไป เพราะเป็นคนละเรื่องกันในรายงาน
     if overridden and date_changed:
-        changes.append("วันที่นี้จะถูกส่งกลับไปใช้ที่โปรแกรมต้นทาง")
+        changes.append("แผนที่โปรแกรมต้นทางยังเป็นวันเดิม — จะได้วันจริงไปตอนงานเสร็จ")
 
     action = "rescheduled" if data["planned_date"] != activity["planned_date"] else "edited"
     _log(conn, activity["id"], action, user, detail=" · ".join(changes) or "แก้ไขรายละเอียด")
@@ -673,8 +718,194 @@ def move_to(conn, activity: dict, user: dict, new_start: date) -> str | None:
     if span:
         detail += f" (งาน {span + 1} วัน ระยะเวลาเท่าเดิม)"
     if overridden:
-        detail += " · วันที่นี้จะถูกส่งกลับไปใช้ที่โปรแกรมต้นทาง"
+        detail += " · แผนที่โปรแกรมต้นทางยังเป็นวันเดิม — จะได้วันจริงไปตอนงานเสร็จ"
     _log(conn, activity["id"], "rescheduled", user, None, None, detail)
+    return None
+
+
+def plan_end(activity: dict) -> date:
+    """วันสิ้นสุด **ตามแผนเดิม** — ก่อนถูกเลื่อนตามวันที่ลงมือจริง
+
+    ตัวเดียวกับ `_PLAN_END` ที่รายงานใช้ตัดสินตรงแผน/ช้า ·
+    `COALESCE(planned_end_date_original, planned_end_date)`
+
+    ใช้เป็นเกณฑ์เทียบว่า "งานนี้จบตรงแผนไหม" ทุกที่ · ห้ามเทียบกับ `planned_end_date`
+    เฉยๆ เพราะค่านั้นอาจถูก `_shift_to_actual_start()` เลื่อนไปแล้วตอนกดเริ่มงานช้า
+    แล้วงานที่ช้าไป 4 วันจะดูเหมือนตรงแผน
+    """
+    return (activity.get("planned_end_date_original")
+            or activity.get("planned_end_date") or activity["planned_date"])
+
+
+def series_shift_choice(conn, activity: dict, real_end: date,
+                        after: date | None = None) -> dict | None:
+    """งานนี้จบไม่ตรงแผน — มีอะไรต้องถามเรื่องรอบถัดไปของแผนประจำไหม
+
+    ผู้ใช้กำหนด 2026-10-07: กดสิ้นสุด (หรือแก้วันเสร็จ) แล้วไม่ตรงแผน ต้องถามว่า
+    จะเลื่อนรอบถัดไปตามหรือไม่ · คำถามเดียว แต่สิ่งที่เสนอต่างกันตามโหมดของแผน
+    เพราะค่าตั้งต้นของสองโหมดกลับทางกัน:
+
+    | โหมด | รอบถัดไปตอนนี้ | ปุ่มที่เสนอ |
+    |------|----------------|------------|
+    | `fixed` | ยึดปฏิทิน ไม่ขยับเอง | **เลื่อนตามด้วย** (ไม่กด = ไม่เลื่อน) |
+    | `after_done` | เลื่อนตามวันจบไปแล้วอัตโนมัติ | **คงตามแผนเดิม** (ไม่กด = เลื่อนตาม) |
+
+    `activity` ต้องเป็นแถว **ก่อน** การเปลี่ยน — `plan_end()` จะได้เกณฑ์ที่ถูก
+    `after` = วันเริ่มของรอบนี้หลังแก้ ใช้ตัดว่ารอบไหนเป็น "รอบถัดไป" · ส่งมาเฉพาะ
+    ตอนที่การแก้ขยับวันเริ่มด้วย (ลากวาง / แก้ในฟอร์ม) · ต้องตรงกับที่ `shift_rest()`
+    หยิบตอนกดปุ่ม ไม่งั้นปุ่มสัญญาจำนวนรอบที่ไม่ตรงกับที่ทำจริง
+
+    คืน None เมื่อไม่มีอะไรให้ถาม — งานเดี่ยว · จบตรงแผน · ไม่มีรอบถัดไปให้ขยับ ·
+    หรือดึงกลับแล้วได้วันเดิมอยู่ดี
+    """
+    if not activity.get("series_id"):
+        return None
+    planned = plan_end(activity)
+    days = (real_end - planned).days
+    if not days:
+        return None                 # จบตรงแผน ไม่ต้องถาม
+
+    series = fetchone(conn, "SELECT * FROM activity_series WHERE id = %s",
+                      (activity["series_id"],))
+    if series is None:
+        return None
+
+    if series.get("anchor_mode") != recurrence.ANCHOR_AFTER_DONE:
+        probe = {**activity, "planned_date": after or activity["planned_date"]}
+        return {"mode": "shift", "days": days} if later_rounds(conn, probe) else None
+
+    # after_done — รอบถัดไปถูกคำนวณจากวันจบจริงไปแล้ว เสนอให้ดึงกลับมาที่คาบตามแผน
+    nxt = fetchone(conn, """
+        SELECT id, planned_date FROM activities
+         WHERE series_id = %s AND id <> %s AND NOT is_deleted AND status = 'planned'
+         ORDER BY planned_date LIMIT 1
+    """, (series["id"], activity["id"]))
+    if nxt is None:
+        return None
+    made = fetchone(conn, """
+        SELECT COUNT(*) AS n FROM activities WHERE series_id = %s AND NOT is_deleted
+    """, (series["id"],))["n"]
+    to = recurrence.next_after(series, planned, made_count=max(0, made - 1))
+    if to is None or to == nxt["planned_date"]:
+        return None
+    return {"mode": "keep", "days": days, "to": to, "next_id": nxt["id"]}
+
+
+def keep_rest_on_plan(conn, activity: dict, user: dict) -> str | None:
+    """ดึงรอบถัดไปของแผน after_done กลับมาที่คาบตามแผนเดิม
+
+    ใช้เมื่องานจบไม่ตรงแผนแล้วผู้ใช้ตอบว่า "คงแผนเดิม" — รอบถัดไปจะนับจาก
+    **วันสิ้นสุดตามแผน** ไม่ใช่วันที่จบจริง · ป้องกันการบันทึกช้าสะสมจนคาบเพี้ยนไปทั้งสาย
+
+    เขียน log พร้อม `by_user_id` เหมือนการเลื่อนด้วยมือทุกทาง · ผลคือรอบนั้นกลายเป็น
+    "วันที่คนเลือกเอง" แล้ว `scheduler._resync_open()` จะไม่ไปขยับทีหลังอีก
+    (กติกาเดียวกับ `move_to` — ระบบไม่ดึงวันที่คนตัดสินใจแล้วกลับ)
+    """
+    choice = series_shift_choice(conn, activity, done_anchor(activity))
+    if choice is None or choice["mode"] != "keep":
+        return "รอบถัดไปของแผนนี้ตรงกับคาบตามแผนอยู่แล้ว ไม่มีอะไรต้องดึงกลับ"
+
+    row = fetchone(conn, """
+        SELECT id, planned_date, planned_end_date, status FROM activities
+         WHERE id = %s AND NOT is_deleted
+    """, (choice["next_id"],))
+    if row is None or row["status"] != "planned":
+        return "รอบถัดไปถูกเริ่มหรือปิดไปแล้ว ขยับวันไม่ได้"
+
+    to = choice["to"]
+    clash = fetchone(conn, """
+        SELECT id FROM activities
+         WHERE series_id = %s AND planned_date = %s AND id <> %s AND NOT is_deleted
+    """, (activity["series_id"], to, row["id"]))
+    if clash:
+        return f"วันที่ {thaidate.short(to)} มีงานรอบอื่นของแผนนี้อยู่แล้ว ดึงกลับไม่ได้"
+
+    span = (row["planned_end_date"] - row["planned_date"]).days
+    execute(conn, """
+        UPDATE activities SET planned_date = %s, planned_end_date = %s,
+                              shift_source_id = NULL, updated_at = NOW(), updated_by = %s
+         WHERE id = %s
+    """, (to, to + timedelta(days=span), user["id"], row["id"]))
+    _log(conn, row["id"], "rescheduled", user, None, None,
+         f"ดึงกลับมาที่คาบตามแผนเดิม {thaidate.short(row['planned_date'])} → "
+         f"{thaidate.short(to)} (นับจากวันสิ้นสุดตามแผน "
+         f"{thaidate.short(plan_end(activity))} ไม่ใช่วันที่จบจริง)")
+    return None
+
+
+def later_rounds(conn, activity: dict) -> list[dict]:
+    """รอบถัดๆ ไปของแผนประจำเดียวกันที่ยังไม่ปิด — ใช้ถามว่าจะเลื่อนตามไหม
+
+    คืนลิสต์ว่างเมื่อไม่มีอะไรให้ถาม:
+      · งานเดี่ยว ไม่ได้อยู่ในแผนประจำ
+      · ไม่มีรอบที่ยังเปิดอยู่หลังรอบนี้ — แผนแบบ `after_done` เป็นแบบนี้เสมอ
+        เพราะเปิดรอบเดียวต่อครั้ง รอบถัดไปคำนวณจากวันที่งานนี้จบเอง
+        (ดู `scheduler.ensure_next_occurrence`) จึงไม่ต้องถาม
+    """
+    if not activity.get("series_id"):
+        return []
+    return fetchall(conn, """
+        SELECT id, title, planned_date, planned_end_date FROM activities
+         WHERE series_id = %s AND id <> %s AND NOT is_deleted
+           AND status = 'planned' AND planned_date > %s
+         ORDER BY planned_date
+    """, (activity["series_id"], activity["id"], activity["planned_date"]))
+
+
+def shift_rest(conn, activity: dict, user: dict, days: int) -> str | None:
+    """เลื่อนรอบถัดๆ ไปของแผนประจำเดียวกันไปเท่ากัน — ปุ่ม "เลื่อนรอบถัดไปตามด้วย"
+
+    **เลื่อนเท่ากันทุกรอบ ไม่คำนวณใหม่จากคาบของแผน** — ผู้ใช้เลื่อนรอบนี้ไป 5 วัน
+    ก็คาดว่าทั้งสายขยับไป 5 วันแล้วระยะห่างเท่าเดิม · ถ้าคำนวณใหม่จากคาบ ระยะห่าง
+    ที่เขาตั้งไว้จะเปลี่ยนไปทั้งสายโดยไม่มีใครสั่ง (ต่างจาก `shift_chain` ซึ่งมีหน้าที่
+    หลบการชนวันเดียวกัน จึงต้องเดินตามคาบ)
+
+    ไม่แตะรอบที่กดเริ่ม/ปิดไปแล้ว — เป็นประวัติ · รอบที่ขยับไปชนวันของรอบที่ปิดแล้ว
+    ก็ข้ามไป แล้วบอกผู้ใช้ว่าตัวไหนไม่ได้ขยับ ไม่ใช่ล้มทั้งคำสั่ง
+
+    **ลำดับ UPDATE สำคัญ** — `UNIQUE (series_id, planned_date)` ตรวจทีละคำสั่ง
+    ไม่ได้รอถึง commit · เลื่อนไปข้างหน้าต้องไล่จากรอบท้ายสุดย้อนกลับมา
+    เลื่อนถอยหลังต้องไล่จากรอบต้น ไม่งั้นตัวที่ขยับก่อนจะไปทับตัวที่ยังไม่ขยับ
+    """
+    if not days:
+        return None
+    rows = later_rounds(conn, activity)
+    if not rows:
+        return "แผนนี้ไม่มีรอบถัดไปที่รออยู่ จึงไม่มีอะไรให้เลื่อน"
+
+    ours = {r["id"] for r in rows}
+    done, skipped = [], []
+    for row in sorted(rows, key=lambda r: r["planned_date"], reverse=days > 0):
+        to = row["planned_date"] + timedelta(days=days)
+        # วันปลายทางอาจมีรอบที่ปิดไปแล้วจองไว้ — รอบในชุดที่กำลังขยับไม่นับ
+        # เพราะมันจะหลบให้เองตามลำดับ UPDATE ข้างบน
+        taken = fetchone(conn, """
+            SELECT id FROM activities
+             WHERE series_id = %s AND planned_date = %s AND id <> %s AND NOT is_deleted
+        """, (activity["series_id"], to, row["id"]))
+        if taken and taken["id"] not in ours:
+            skipped.append(thaidate.short(row["planned_date"]))
+            continue
+        span = (row["planned_end_date"] - row["planned_date"]).days
+        execute(conn, """
+            UPDATE activities
+               SET planned_date = %s, planned_end_date = %s, shift_source_id = NULL,
+                   date_overridden = CASE WHEN source_system IS NULL
+                                          THEN date_overridden ELSE TRUE END,
+                   updated_at = NOW(), updated_by = %s
+             WHERE id = %s
+        """, (to, to + timedelta(days=span), user["id"], row["id"]))
+        _log(conn, row["id"], "rescheduled", user, None, None,
+             f"เลื่อนตามรอบ {thaidate.short(activity['planned_date'])} ของแผนประจำ "
+             f"{thaidate.short(row['planned_date'])} → {thaidate.short(to)}")
+        done.append(row["id"])
+
+    _log(conn, activity["id"], "rescheduled", user, None, None,
+         f"เลื่อนรอบถัดไปตามด้วย {len(done)} รอบ "
+         f"({'+' if days > 0 else ''}{days} วัน)")
+    if skipped:
+        return ("เลื่อนแล้ว " + str(len(done)) + " รอบ · ข้ามรอบวันที่ "
+                + ", ".join(skipped) + " เพราะวันปลายทางมีรอบที่ปิดไปแล้วอยู่")
     return None
 
 
@@ -725,8 +956,15 @@ def set_end_date(conn, activity: dict, user: dict, new_date: date) -> str | None
     if closed:
         detail += f" · แก้ย้อนหลังหลังงาน{STATUS_LABELS[activity['status']]}แล้ว — มีผลกับรายงาน"
     if overridden:
-        detail += " · วันที่นี้จะถูกส่งกลับไปใช้ที่โปรแกรมต้นทาง"
+        detail += " · แผนที่โปรแกรมต้นทางยังเป็นวันเดิม — จะได้วันจริงไปตอนงานเสร็จ"
     _log(conn, activity["id"], "rescheduled", user, None, None, detail)
+
+    # แก้วันสิ้นสุดของงานที่ปิดไปแล้ว = จุดตั้งต้นของรอบถัดไปเปลี่ยน (ดู done_anchor)
+    # นี่คือลำดับที่ใช้จริงหน้างาน — กดสิ้นสุดย้อนหลัง แล้วค่อยมาแก้วันให้ตรงความจริง
+    # ไม่ทำกับงานที่ยังเปิดอยู่ เพราะรอบที่ค้างคือตัวมันเอง จะกลายเป็นย้ายแถวที่เพิ่งยืด
+    if closed:
+        fixed = {**activity, "planned_end_date": new_date}
+        _advance_series(conn, fixed, done_anchor(fixed))
     return None
 
 
@@ -872,9 +1110,53 @@ def finish(conn, activity: dict, user: dict | None, result_note: str = "") -> st
     else:
         detail = f"ใช้เวลา {thaidate.duration(minutes)}"
     _log(conn, activity["id"], "finished", user, activity["status"], "done", detail)
-    # รอบถัดไปของแผนแบบ after_done นับจากวันนี้ (วันที่กดเสร็จ)
-    _advance_series(conn, activity, thaidate.today())
+
+    # กดสิ้นสุดเมื่อไร วันสิ้นสุดในแผนต้องเลื่อนมาตรงวันนั้น (ผู้ใช้กำหนด 2026-10-07)
+    end = _shift_end_to_finish(conn, activity, user)
+    _advance_series(conn, {**activity, "planned_end_date": end},
+                    done_anchor({**activity, "planned_end_date": end}))
     return None
+
+
+def _shift_end_to_finish(conn, activity: dict, user: dict | None,
+                         target: date | None = None) -> date:
+    """เลื่อนวันสิ้นสุดในแผนให้ตรงกับวันที่งานจบจริง · คืนวันสิ้นสุดใหม่
+
+    **คู่ขนานกับ `_shift_to_actual_start`** — กดเริ่มแล้ววันเริ่มเลื่อนมาวันที่กด
+    กดสิ้นสุดแล้ววันสิ้นสุดก็ต้องเลื่อนมาวันที่กดเหมือนกัน (ผู้ใช้กำหนด 2026-10-07)
+    ช่วงวันในแผนของงานที่ปิดแล้วจึงหมายถึง "ช่วงที่ทำจริง" ไม่ใช่ "ช่วงที่เคยตั้งใจ"
+    กดย้อนหลังแล้วงานจบจริงก่อนนั้น → แก้วันสิ้นสุดย้อนหลังด้วย `set_end_date()`
+
+    **เก็บวันเดิมไว้ที่ `planned_end_date_original` ครั้งแรกครั้งเดียว** (COALESCE)
+    เหตุผลเดียวกับ `_shift_to_actual_start` — รายงานตัดสินตรงแผน/ช้าจาก `_PLAN_END`
+    ถ้าไม่เก็บ ทุกงานจะกลายเป็น "ตรงแผน" ทันทีที่ปิด แล้วสถิติงานช้าจะหายไปทั้งระบบ
+    ถ้าเขียนทับทุกรอบ การเปิด-ปิด-เปิดใหม่จะทำให้ "แผนเดิม" กลายเป็นวันที่เพิ่งเลื่อน
+
+    ไม่เช็กการชน `UNIQUE (series_id, planned_date)` เพราะกุญแจนั้นคุมเฉพาะวันเริ่ม
+    """
+    today = target or thaidate.today()
+    old_end = activity.get("planned_end_date") or activity["planned_date"]
+    # วันสิ้นสุดห้ามมาก่อนวันเริ่ม — ปิดงานย้อนหลังไปก่อนวันที่แผนเริ่มเกิดได้
+    # (งานที่ไม่ต้องกดเริ่ม แล้วคนปิดย้อนหลัง) กรณีนั้นให้จบวันเดียวกับวันเริ่ม
+    new_end = max(today, activity["planned_date"])
+    if new_end == old_end:
+        return old_end
+
+    execute(conn, """
+        UPDATE activities
+           SET planned_end_date = %s,
+               planned_end_date_original = COALESCE(planned_end_date_original, %s),
+               date_overridden = CASE WHEN source_system IS NOT NULL
+                                      THEN TRUE ELSE date_overridden END,
+               updated_at = NOW(), updated_by = %s
+         WHERE id = %s
+    """, (new_end, old_end, user["id"] if user else None, activity["id"]))
+
+    days = (new_end - activity["planned_date"]).days + 1
+    _log(conn, activity["id"], "rescheduled", user, None, None,
+         f"วันสิ้นสุดเลื่อนมาตรงวันที่งานจบจริง {thaidate.short(old_end)} → "
+         f"{thaidate.short(new_end)} (รวมเป็น {days} วัน)")
+    return new_end
 
 
 def reopen(conn, activity: dict, user: dict) -> str | None:
@@ -904,7 +1186,7 @@ def cancel(conn, activity: dict, user: dict | None, reason: str) -> str | None:
     _log(conn, activity["id"], "cancelled", user, activity["status"], "cancelled",
          reason or "ไม่ได้ระบุเหตุผล")
     # ยกเลิกแปลว่าไม่ได้ลงมือทำ จึงนับรอบถัดไปจากวันที่วางแผนไว้ ไม่ใช่วันนี้
-    _advance_series(conn, activity, activity["planned_end_date"])
+    _advance_series(conn, activity, done_anchor(activity))
     return None
 
 
@@ -919,7 +1201,7 @@ def mark_missed(conn, activity: dict, user: dict, reason: str = "") -> str | Non
     """, (reason, user["id"], activity["id"]))
     _log(conn, activity["id"], "missed", user, activity["status"], "missed",
          reason or f"ค้างมา {activity['days_late']} วัน")
-    _advance_series(conn, activity, activity["planned_end_date"])
+    _advance_series(conn, activity, done_anchor(activity))
     return None
 
 

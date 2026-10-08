@@ -20,6 +20,7 @@
         touched: {{ "true" if editing else "false" }},
 
         onCategory(id) {
+          this.$dispatch("category-changed", id);
           if (this.touched) return;
           this.needsStart = id === "" ? true : (this.catNeeds[id] !== false);
         }
@@ -82,6 +83,12 @@
   </div>
 </div>
 
+{# ฝูงไก่ (ส่งไป RPF Farm) — งานที่ซิงค์มาจากฟาร์มอยู่แล้วไม่มีส่วนนี้
+   มันมีแผนในฟาร์มอยู่แล้ว ส่งอีกจะกลายเป็นแผนซ้ำ #}
+{% if not (editing and activity.source_system) %}
+{% with rec = activity %}{% include "_farm_picker.html" %}{% endwith %}
+{% endif %}
+
 <div class="card">
   <div class="card-head"><h2 class="card-title">วันและเวลา</h2></div>
   <div class="card-body">
@@ -112,7 +119,7 @@
     <div class="alert info" style="margin:4px 0 0">
       งานนี้ซิงค์มาจาก <strong>{{ SOURCE_LABELS.get(activity.source_system, activity.source_system) }}</strong>
       — แก้วันที่ที่นี่ได้เลย ไม่ต้องไปแก้ที่โปรแกรมต้นทาง
-      <br>รอบซิงค์ถัดไปจะไม่เขียนทับวันที่แก้ และต้นทางจะดึงวันนี้กลับไปใช้เอง
+      <br>รอบซิงค์ถัดไปจะไม่เขียนทับวันที่แก้ · แผนที่ต้นทางยังเป็นวันเดิม จะได้วันจริงไปตอนงานเสร็จ
       <br>ส่วนชื่องานกับรายละเอียดยังให้ต้นทางเป็นเจ้าของ แก้ที่นี่แล้วรอบหน้าจะถูกเขียนทับ
     </div>
     {% endif %}
@@ -265,4 +272,5 @@
 
 {% block scripts %}
 <script src="{{ asset('js/workers.js') }}"></script>
+<script src="{{ asset('js/farmlink.js') }}"></script>
 {% endblock %}

@@ -104,6 +104,16 @@ def _resolve_assignee(conn, hint: str) -> int | None:
     return row["id"] if row else None
 
 
+def category_for(config: dict, item: ExternalActivity) -> int | None:
+    """ประเภทของกิจกรรมใหม่ — ตามชนิดของรายการก่อน ไม่มีค่อยใช้ประเภทตั้งต้นของแหล่ง
+
+    ใช้ตอนสร้างเท่านั้น _update_plan_only() ไม่แตะ category_id เพราะคนเปลี่ยนประเภท
+    ในปฏิทินได้ (activities.update) ถ้ารอบซิงค์ทับกลับ สิ่งที่เขาแก้จะหายเงียบ
+    """
+    mapped = (config.get("category_map") or {}).get(item.category_key)
+    return int(mapped) if mapped else config.get("category_id")
+
+
 def _insert(conn, source: SyncSource, item: ExternalActivity, config: dict, user: dict | None):
     row = fetchone(conn, """
         INSERT INTO activities
@@ -113,7 +123,7 @@ def _insert(conn, source: SyncSource, item: ExternalActivity, config: dict, user
              external_hash, created_by, updated_by)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE, 'sync', %s, %s, %s, %s, %s)
         RETURNING id
-    """, (item.title, config.get("category_id"), item.description,
+    """, (item.title, category_for(config, item), item.description,
           _resolve_assignee(conn, item.assignee_hint), item.priority,
           item.planned_date, item.final_date, item.is_all_day, item.start_time,
           item.duration_min, source.system, item.external_id, item.fingerprint(),
@@ -134,7 +144,7 @@ def _update_plan_only(conn, current: dict, item: ExternalActivity, user: dict | 
     ไม่งั้นคนที่กดเริ่มงานไปแล้วจะโดนรอบซิงค์ถัดไปล้างของทิ้ง
     """
     # วันที่ถูกแก้จากปฏิทินแล้ว — เก็บของเดิมไว้ ไม่เอาวันจากต้นทางมาทับ
-    # (ฝั่งฟาร์มจะมาดึงวันนี้กลับไปใช้เอง ผ่าน services/calendar_pull.py)
+    # (ฝั่งฟาร์มไม่รับวันนี้ไปทับแผน — ได้แค่วันจริงตอนงานเสร็จ ผ่าน calendar_pull.pull_results)
     keep_dates = current["date_overridden"]
     start = current["planned_date"] if keep_dates else item.planned_date
     end = current["planned_end_date"] if keep_dates else item.final_date

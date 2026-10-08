@@ -1,0 +1,63 @@
+{# ── ฝูงไก่ (ส่งไป RPF Farm) ── ใช้ร่วมกันทั้งฟอร์มกิจกรรมและฟอร์มแผนงานประจำ (migration 016)
+   ตัวแปรที่ต้องมี: rec = กิจกรรม/แผนที่กำลังแก้ (หรือ none) · farm_sync_cats จาก router
+   โผล่เมื่อประเภทที่เลือกติ๊ก "ส่งไป RPF Farm" — ช่องประเภทต้องยิง event category-changed
+   (farm_sync_cats or []) เผื่อช่วงที่ router ยังเป็นตัวเก่า (รอรีสตาร์ต) #}
+<div class="card"
+     x-data='farmLink({
+       cats: {{ (farm_sync_cats or []) | tojson }},
+       category: {{ (rec.category_id | string if rec and rec.category_id else "") | tojson }},
+       flockId: {{ (rec.farm_flock_id if rec and rec.farm_flock_id else 0) | tojson }},
+       flockCode: {{ (rec.farm_flock_code if rec and rec.farm_flock_code else "") | tojson }},
+       kind: {{ (rec.farm_kind if rec and rec.farm_kind else "") | tojson }},
+       itemId: {{ (rec.farm_item_id if rec and rec.farm_item_id else 0) | tojson }},
+       itemName: {{ (rec.farm_item_name if rec and rec.farm_item_name else "") | tojson }}
+     })'
+     x-on:category-changed.window="category = $event.detail"
+     x-show="show" x-cloak>
+  <div class="card-head">
+    <h2 class="card-title">ฝูงไก่ (ส่งไป RPF Farm)</h2>
+    <div class="spacer"></div>
+    <button type="button" class="btn btn-sm" x-on:click="load()" :disabled="loading"
+            x-text="loading ? 'กำลังดึง…' : (loaded ? 'ดึงใหม่' : 'ดึงฝูงไก่ปัจจุบัน')"></button>
+  </div>
+  <div class="card-body">
+    <div class="alert" x-show="error" x-text="error"></div>
+    {# x-if: ประเภทที่ไม่ได้ส่งไปฟาร์ม ช่องพวกนี้ต้องไม่อยู่ในฟอร์มเลย ไม่งั้น required บล็อกการบันทึก #}
+    <template x-if="show">
+      <div class="form-grid">
+        <div class="field">
+          <label for="farm_flock_id">ฝูงไก่ *</label>
+          <select id="farm_flock_id" name="farm_flock_id" required
+                  x-on:change="flockId = $event.target.value; suggestTitle()">
+            <option value="" x-text="loaded ? '— เลือกฝูง —' : '— กด ดึงฝูงไก่ปัจจุบัน —'"></option>
+            <template x-for="f in flocks" :key="f.id">
+              <option :value="f.id" :selected="String(f.id) === flockId" x-text="flockLabel(f)"></option>
+            </template>
+          </select>
+        </div>
+        <div class="field">
+          <label for="farm_item">วัคซีน / กิจกรรม *</label>
+          <select id="farm_item" name="farm_item" required
+                  x-on:change="item = $event.target.value; suggestTitle()">
+            <option value="" x-text="loaded ? '— เลือก —' : '— กด ดึงฝูงไก่ปัจจุบัน —'"></option>
+            <optgroup label="วัคซีน" x-show="vaccines.length">
+              <template x-for="v in vaccines" :key="'v' + v.id">
+                <option :value="'vaccine:' + v.id" :selected="item === 'vaccine:' + v.id" x-text="v.name"></option>
+              </template>
+            </optgroup>
+            <optgroup label="กิจกรรมอื่น" x-show="types.length">
+              <template x-for="t in types" :key="'a' + t.id">
+                <option :value="'activity:' + t.id" :selected="item === 'activity:' + t.id" x-text="t.name"></option>
+              </template>
+            </optgroup>
+          </select>
+        </div>
+      </div>
+    </template>
+    <div class="hint">
+      ประเภทนี้ตั้งไว้ให้ส่งไป RPF Farm — ฟาร์มจะสร้างเป็นแผนกิจกรรมของฝูงที่เลือกเมื่อกด
+      "ดึงผล" ในหน้าปฏิทินฝูงไก่ · ทำเสร็จที่นี่แล้วฟาร์มจะลงบันทึกผลให้ ·
+      ชื่องานที่ว่างอยู่จะถูกเติมให้จากสิ่งที่เลือก
+    </div>
+  </div>
+</div>

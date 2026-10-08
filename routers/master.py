@@ -52,11 +52,12 @@ def save_category(request: Request,
                   default_priority: str = Form("3"),
                   default_duration_min: str = Form(""),
                   sort_order: str = Form("0"), active: str = Form(""),
-                  needs_start: str = Form("")):
+                  needs_start: str = Form(""), farm_sync: str = Form("")):
     require_role(request, "manager")
     values = (as_text(name), as_text(color) or "#2f7de1", as_text(icon)[:4],
               as_priority(default_priority), as_int(default_duration_min),
-              as_int(sort_order, 0), as_bool(active), as_bool(needs_start))
+              as_int(sort_order, 0), as_bool(active), as_bool(needs_start),
+              as_bool(farm_sync))
     if not values[0]:
         return _back("/master/categories", err="ต้องกรอกชื่อประเภท")
 
@@ -67,15 +68,15 @@ def save_category(request: Request,
                     UPDATE activity_categories SET name = %s, color = %s, icon = %s,
                            default_priority = %s, default_duration_min = %s,
                            sort_order = %s, active = %s, needs_start = %s,
-                           updated_at = NOW()
+                           farm_sync = %s, updated_at = NOW()
                      WHERE id = %s
                 """, values + (as_int(id),))
             else:
                 execute(conn, """
                     INSERT INTO activity_categories
                         (name, color, icon, default_priority, default_duration_min,
-                         sort_order, active, needs_start)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                         sort_order, active, needs_start, farm_sync)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, values)
     except errors.UniqueViolation:
         return _back("/master/categories", err=f"มีประเภทชื่อ \"{values[0]}\" อยู่แล้ว")

@@ -112,6 +112,38 @@
             <button class="btn btn-sm" type="submit">↩ ย้ายกลับ</button>
           </form>
           {% endif %}
+          {# รอบของแผนประจำที่วันเปลี่ยนไปจากแผน — ถามตรงนี้ว่าจะให้รอบถัดไปเลื่อนตามไหม
+             สองโหมดกลับทางกัน ปุ่มจึงต่างกัน (routers/activities._ask_series):
+               shift_rest = แผน fixed รอบถัดไปยังอยู่ที่เดิม → เสนอให้เลื่อนตาม
+               keep_plan  = แผน after_done รอบถัดไปเลื่อนตามไปแล้ว → เสนอให้ดึงกลับ
+             โผล่เฉพาะเมื่อมีรอบถัดไปให้ขยับจริง #}
+          {% if request.query_params.get('shift_rest') and request.query_params.get('shift_days') %}
+          {% set d = request.query_params.get('shift_days')|int %}
+          <span class="muted" style="margin-left:10px">
+            {{ 'ช้ากว่าแผน' if d > 0 else 'เร็วกว่าแผน' }} {{ d|abs }} วัน —
+          </span>
+          <form method="post"
+                action="/activities/{{ request.query_params.get('shift_rest') }}/shift-rest"
+                style="display:inline">
+            <input type="hidden" name="days" value="{{ request.query_params.get('shift_days') }}">
+            <input type="hidden" name="next" value="{{ path }}">
+            <button class="btn btn-sm" type="submit">⇥ เลื่อนรอบถัดไปตามด้วย</button>
+          </form>
+          {% elif request.query_params.get('keep_plan') and request.query_params.get('keep_to') %}
+          {% set d = request.query_params.get('late_days')|int %}
+          <span class="muted" style="margin-left:10px">
+            {{ 'ช้ากว่าแผน' if d > 0 else 'เร็วกว่าแผน' }} {{ d|abs }} วัน —
+            รอบถัดไปเลื่อนตามไปแล้ว
+          </span>
+          <form method="post"
+                action="/activities/{{ request.query_params.get('keep_plan') }}/keep-plan"
+                style="display:inline">
+            <input type="hidden" name="next" value="{{ path }}">
+            <button class="btn btn-sm" type="submit">
+              ⇤ คงแผนเดิม ({{ request.query_params.get('keep_to') }})
+            </button>
+          </form>
+          {% endif %}
         </div>
       {% endif %}
       {% if request.query_params.get('err') %}

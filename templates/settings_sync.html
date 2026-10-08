@@ -29,7 +29,14 @@
         {% for r in rows %}
           <tr>
             <td><strong>{{ r.name }}</strong><br><span class="faint" style="font-size:12px">{{ r.code }}</span></td>
-            <td>{{ r.category_name or '—' }}</td>
+            <td>
+              {% for k in (r.kinds or []) %}
+                <span class="faint" style="font-size:12px">{{ k.label }}:</span>
+                {{ k.name or r.category_name or '—' }}<br>
+              {% else %}
+                {{ r.category_name or '—' }}
+              {% endfor %}
+            </td>
             <td>{{ r.lookback_days }} วัน</td>
             <td>
               {% if r.last_run_at %}{{ ts(r.last_run_at) }}<br>
@@ -46,6 +53,31 @@
               </form>
               <form method="post" action="/settings/sync/{{ r.id }}/toggle" style="display:inline">
                 <button class="btn btn-sm">{% if r.enabled %}ปิด{% else %}เปิด{% endif %}</button>
+              </form>
+            </td>
+          </tr>
+          <tr>
+            <td colspan="6" style="background:var(--bg)">
+              <form method="post" action="/settings/sync/{{ r.id }}/categories"
+                    style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+                {% for k in (r.kinds or []) %}
+                <div>
+                  <label class="faint" style="font-size:12px;display:block">{{ k.label }} ลงในประเภท</label>
+                  <select name="cat_{{ k.key }}">
+                    <option value="">— ใช้ประเภทตั้งต้น —</option>
+                    {% for c in categories %}<option value="{{ c.id }}" {% if c.id == k.id %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+                  </select>
+                </div>
+                {% endfor %}
+                <div>
+                  <label class="faint" style="font-size:12px;display:block">ประเภทตั้งต้น</label>
+                  <select name="category_id">
+                    <option value="">— ไม่ระบุ —</option>
+                    {% for c in categories %}<option value="{{ c.id }}" {% if c.id == r.category_id %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+                  </select>
+                </div>
+                <button class="btn btn-sm">บันทึกประเภท</button>
+                <span class="faint" style="font-size:12px">มีผลกับงานที่ซิงค์มาใหม่ งานเดิมคงประเภทไว้</span>
               </form>
             </td>
           </tr>

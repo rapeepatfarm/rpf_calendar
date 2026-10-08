@@ -47,6 +47,9 @@ app = FastAPI(title="RPF Calendar", lifespan=lifespan)
 app.add_middleware(
     SessionMiddleware,
     secret_key=SESSION_SECRET,
+    # ชื่อคุกกี้ต้องไม่ซ้ำกับโปรแกรมพี่น้อง — เบราว์เซอร์แยกคุกกี้ตามชื่อเครื่อง ไม่แยกตามพอร์ต
+    # ถ้าใช้ "session" ตามค่าตั้งต้นเหมือนกันหมด ล็อกอินโปรแกรมหนึ่งจะเตะอีกโปรแกรมออก (เจอ 2026-10-08)
+    session_cookie="rpf_calendar_session",
     max_age=SESSION_MAX_AGE,
     same_site="lax",
     # ดู SESSION_HTTPS_ONLY ใน config.py — Tailscale ธรรมดาใช้ http จึงต้องปิดไว้

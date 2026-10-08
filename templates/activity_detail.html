@@ -148,14 +148,24 @@
     </div>
     {% endif %}
 
+    {% if a.farm_flock_id %}
+    <div class="alert info" style="margin:16px 0 0">
+      ส่งไป <strong>RPF Farm</strong> · ฝูง <strong>{{ a.farm_flock_code }}</strong>
+      · {{ 'วัคซีน' if a.farm_kind == 'vaccine' else 'กิจกรรม' }} <strong>{{ a.farm_item_name }}</strong>
+      <div class="faint" style="margin-top:6px">
+        ฟาร์มจะสร้างเป็นแผนกิจกรรมของฝูงนี้ และลงบันทึกผลเมื่องานเสร็จ — เมื่อกด "ดึงผล" ในหน้าปฏิทินฝูงไก่
+      </div>
+    </div>
+    {% endif %}
+
     {% if a.source_system %}
     <div class="alert info" style="margin:16px 0 0">
       งานนี้ซิงค์มาจากโปรแกรม <strong>{{ SOURCE_LABELS.get(a.source_system, a.source_system) }}</strong>
       {% if a.date_overridden %}
         <br>วันที่ถูกแก้ที่ปฏิทินนี้ — รอบซิงค์ถัดไปจะไม่เขียนทับ
-        และ {{ SOURCE_LABELS.get(a.source_system, a.source_system) }} จะดึงวันนี้กลับไปใช้เมื่อกดดึงผลงาน
+        · แผนใน {{ SOURCE_LABELS.get(a.source_system, a.source_system) }} ยังเป็นวันเดิม จะได้วันเริ่ม–สิ้นสุดจริงไปตอนงานเสร็จ
       {% else %}
-        <br>แก้วันที่ได้จากที่นี่ · ระบบจะจำไว้และส่งกลับไปให้โปรแกรมต้นทางใช้
+        <br>แก้วันที่ได้จากที่นี่ · ใช้ในปฏิทินเท่านั้น โปรแกรมต้นทางได้วันจริงไปตอนงานเสร็จ
       {% endif %}
     </div>
     {% endif %}

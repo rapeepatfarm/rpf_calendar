@@ -8,6 +8,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
+from psycopg2.extras import Json
 
 from auth import require_role
 from database import execute, fetchall, fetchone, get_conn
@@ -35,6 +36,14 @@ def sync_page(request: Request, ok: str = "", err: str = ""):
             SELECT * FROM sync_runs ORDER BY started_at DESC LIMIT 20
         """)
         categories = fetchall(conn, "SELECT id, name FROM activity_categories WHERE active ORDER BY sort_order")
+        names = {c["id"]: c["name"] for c in fetchall(conn, "SELECT id, name FROM activity_categories")}
+        for r in rows:
+            src = sources.get(r["code"])
+            cmap = (r["config"] or {}).get("category_map") or {}
+            # [{key, label, id, name}] — ชนิดที่ยังไม่ได้เลือกจะลงประเภทตั้งต้น (id = None)
+            r["kinds"] = [{"key": k, "label": label, "id": cmap.get(k),
+                           "name": names.get(cmap.get(k))}
+                          for k, label in (getattr(src, "category_keys", None) or {}).items()]
         return page(request, user, "settings_sync.html", conn=conn,
                     rows=rows, available=available, runs=runs, categories=categories)
 
@@ -56,6 +65,29 @@ async def register(request: Request, code: str):
             ON CONFLICT (code) DO UPDATE SET category_id = EXCLUDED.category_id
         """, (src.code, src.name, int(category_id) if category_id else None))
     return _back(ok=f"เปิดใช้ {src.name} แล้ว")
+
+
+@router.post("/{source_id}/categories")
+async def set_categories(request: Request, source_id: int):
+    """เลือกประเภทที่งานจากแหล่งนี้จะลง — ตั้งต้น + แยกตามชนิดรายการ
+
+    มีผลกับงานที่ซิงค์มา**ใหม่**เท่านั้น งานเดิมคงประเภทไว้ (ดู runner.category_for)
+    """
+    require_role(request, "manager")
+    form = await request.form()
+    with get_conn() as conn:
+        row = fetchone(conn, "SELECT code, config FROM sync_sources WHERE id = %s", (source_id,))
+        if row is None:
+            return _back(err="ไม่พบแหล่งข้อมูล")
+        src = sources.get(row["code"])
+        keys = getattr(src, "category_keys", None) or {}
+        cmap = {k: int(form[f"cat_{k}"]) for k in keys if (form.get(f"cat_{k}") or "").isdigit()}
+        config = dict(row["config"] or {})
+        config["category_map"] = cmap
+        default = form.get("category_id") or ""
+        execute(conn, "UPDATE sync_sources SET category_id = %s, config = %s WHERE id = %s",
+                (int(default) if default.isdigit() else None, Json(config), source_id))
+    return _back(ok="บันทึกประเภทแล้ว — มีผลกับงานที่ซิงค์มาใหม่")
 
 
 @router.post("/{source_id}/toggle")

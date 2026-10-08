@@ -41,6 +41,10 @@ class ExternalActivity:
     source_status: str = "pending"
     done_on: date | None = None
 
+    # ชนิดของรายการ ใช้เลือกประเภทกิจกรรมตอนสร้าง (ดู SyncSource.category_keys)
+    # ว่าง = ลงประเภทตั้งต้นของแหล่ง
+    category_key: str = ""
+
     payload: dict = field(default_factory=dict)
 
     def fingerprint(self) -> str:
@@ -64,6 +68,11 @@ class SyncSource(Protocol):
     code: str      # รหัสสั้นๆ ไม่ซ้ำใคร เช่น "farm_activities"
     name: str      # ชื่อที่คนอ่านรู้เรื่อง เช่น "แผนวัคซีนจาก RPF Farm"
     system: str    # ชื่อโปรแกรมต้นทาง เช่น "rpf_farm"
+
+    # (ไม่บังคับ) ชนิดของรายการที่แยกลงคนละประเภทได้ {key: ป้ายบนหน้าจอ}
+    # หน้า /settings/sync จะมีช่องเลือกประเภทให้ทีละ key
+    # ค่าที่เลือกเก็บใน sync_sources.config["category_map"]
+    category_keys: dict[str, str]
 
     def fetch(self, config: dict, since: date) -> list[ExternalActivity]:
         """ดึงกิจกรรมตั้งแต่วันที่ since เป็นต้นไป
